@@ -243,6 +243,9 @@
   .mixt:focus-within{border-color:var(--compute)}
   .mixt .mixdot{width:8px;height:8px;border-radius:2px;margin-right:8px;flex:none}
   .arow.derived input[type=number]{background:var(--raised);border-color:transparent;font-weight:700}
+  .drv.derived-row input[type=number]{background:var(--raised);border-color:transparent;font-weight:700}
+  .drv.derived-row input[type=number]:disabled{color:var(--ink);-webkit-text-fill-color:var(--ink);opacity:1;cursor:default}
+  .drv.derived-row input[type=range]{display:none}
   .arow.derived input[type=number]:disabled{color:var(--ink);-webkit-text-fill-color:var(--ink);opacity:1;cursor:default}
   .dtag{margin-left:6px;font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:.14em;
     text-transform:uppercase;color:var(--compute);border:1px solid var(--compute-dim);
@@ -429,11 +432,17 @@ const DEF={
   serverPrice:790000, elec:0.047, rental:7.76, years:5, netPct:0.12, transitMo:0,
   wsShare:0.70, // GPU sales mix: 70% wholesale/contract, 30% on-demand — blends the rental
 
-  servers:256, gpus:8, deployMonths:3, leadMonths:2, lockYears:5, // 256 nodes = 2,048 GPUs at kick-off
+  servers:256, gpus:8, deployMonths:3, leadMonths:2, lockYears:5,
+  // GPUs handed over per tranche; servers is derived from the total. Month 1 = Jan 2026.
+  gpuRoadmap:[
+    {k:'2026',    m:12, g:1024},
+    {k:'2027 H1', m:18, g:2048},  {k:'2027 H2', m:24, g:2024},
+    {k:'2028 H1', m:30, g:5144},  {k:'2028 H2', m:36, g:10240},
+    {k:'2029 H1', m:42, g:10240}, {k:'2029 H2', m:48, g:30992}],
   coloMW:2, coloRate:220, coloLeaseYears:10, coloEsc:0.025,
   rentalDecline:0.12, utilStart:1.0, utilSteady:1.0, utilRamp:6,
   utilWS:1.0, utilOD:0.90, // sold-through by channel: contract is take-or-pay, on-demand runs at 90%
-  powerKW:14, netPowerKW:1.4, pue:1.45, warrantyPct:0.05, warrantyInclYears:3, otherPct:0.035, residualPct:0.80, netResidualPct:0, tax:0.15, saudiPct:1.00, occupancy:0.90, rackKW:0,
+  powerKW:14, netPowerKW:1.4, pue:1.20, warrantyPct:0.05, warrantyInclYears:3, otherPct:0.035, residualPct:0.80, netResidualPct:0, tax:0.15, saudiPct:1.00, occupancy:0.90, rackKW:0,
   gaPct:0.12, gaInfl:0.08, omPerMWYr:1500000, renewUplift:0.10,
   facilityPerMW:12000000, facilityLife:25, psPerMW:424000, psPer512:2400000, shellPct:0.25, usableIT:0.80,
   // IDC build roadmap — MW handed over, and the project month each tranche goes live.
@@ -472,7 +481,7 @@ function taasBlended(p){ // fleet-weighted blended $/GPU-hour across modalities
   return {rental: mixSum>0?rev/mixSum:0};
 }
 const TOG={debt:true, decline:true, util:false, phase:true, facility:false, lock:true, ga:true, wc:true, exit:false, exitcur:false, colo:false};
-let S={...DEF, modes:DEF.modes.map(m=>({...m})), roadmap:DEF.roadmap.map(r=>({...r}))}, T={...TOG};
+let S={...DEF, modes:DEF.modes.map(m=>({...m})), roadmap:DEF.roadmap.map(r=>({...r})), gpuRoadmap:DEF.gpuRoadmap.map(r=>({...r}))}, T={...TOG};
 
 /* ═══════════════ GPU model catalogue (turnkey landed prices, mid-2026) ═══════════════ */
 /* nodeCost = full system: GPUs + CPU/mem/storage + chassis + liquid cooling + integration */
@@ -546,12 +555,7 @@ const F_REV=[
   {k:'utilSteady',gpuOnly:true,derived:'blend',label:'Utilization — steady',unit:'%',step:1,pct:true,info:'Mature utilisation once ramped. 85% is strong for contracted capacity; hyperscalers assume 70-90%.'},
   {k:'utilRamp',gpuOnly:true,label:'Utilization ramp',unit:'months',step:1,tog:'util',info:'Months to climb from start to steady utilisation as customers onboard.'},
   {k:'arDays',label:'Receivable days (AR)',unit:'days',step:5,tog:'wc',info:'Days between billing and cash collection. Working-capital drag funded by equity until it unwinds.'},
-  {k:'usableIT',propcoOnly:true,label:'Usable IT load',unit:'% of campus power',step:5,pct:true,info:'Share of campus power that reaches the white space as leasable IT load; the rest is cooling, electrical losses and back-of-house. The roadmap is scheduled in MW IT, so this works the other way round: it derives how much campus power the site has to draw to deliver that load. Every rate in the model — build cost, O&M, development fees, lease price — is per MW IT.'},
-  {k:'coloMW',roadmapDriven:true,label:'Colocation capacity',unit:'MW IT',step:0.5,tog:'colo',info:'Facility capacity leased to third-party colo tenants (own-build only). A stable rental layer beside the GPU business.'},
-  {k:'coloRate',coreInPropco:true,label:'Colo rate (excl. power)',unit:'$/kW/mo',step:10,tog:'colo',info:'Rack + power-capacity rent to colo tenants, excl. metered power (tenants pay their own electricity). Set by the capacity mix: $250/kW/mo for general-purpose colo, rising with power density.'},
   {k:'renewUplift',propcoOnly:true,label:'Renewal uplift',unit:'% at re-lease',step:1,pct:true,tog:'colo',info:'One-time step-up in the lease rate when the initial term expires and space is re-let at market. Digital Realty booked cash renewal spreads of +6.1% to +8.0% through 2025, and close to +20% in its hyperscale segment; annual escalation continues on top of this. Set 0 to renew flat.'},
-  {k:'coloLeaseYears',label:'Colo lease term',unit:'years',step:1,tog:'colo',info:'Colo tenant lease length. 10yr+ is standard and lets the remaining lease be valued as a resale asset at exit.'},
-  {k:'coloEsc',label:'Colo rate escalation',unit:'% / yr',step:0.5,pct:true,tog:'colo',info:'Annual rent bump written into long colo leases. 2-3%/yr typical.'},
 ];
 const F_COST=[
   {section:'CAPEX &amp; residual value'},
@@ -627,11 +631,12 @@ function compute(p,tog){
   // the whole site is built once, up front; fit-out follows each tranche. The roadmap
   // already states when capacity goes live, so the generic build lead time does not apply.
   const road=(!useGpu && Array.isArray(p.roadmap) && p.roadmap.length) ? p.roadmap : null;
+  const groad=(useGpu && Array.isArray(p.gpuRoadmap) && p.gpuRoadmap.length) ? p.gpuRoadmap : null;
   const roadMW=road?road.reduce((t,r)=>t+Math.max(0,r.mw||0),0):0;
   const shellTot=road?facTotal*Math.max(0,Math.min(1,p.shellPct||0)):0;
   const fitTot=road?facTotal-shellTot:0;
   const shellEnd=road?Math.max(1,Math.round(road[0].m||1)):1; // shell completes with the first tranche
-  const lead=road?0:(usePhase?Math.max(0,Math.round(p.leadMonths||0)):0);
+  const lead=(road||groad)?0:(usePhase?Math.max(0,Math.round(p.leadMonths||0)):0);
 
   const A=()=>new Array(N+1).fill(0);
   const build=A(),online=A(),capexS=A(),capexN=A(),capexF=A(),capex=A(),cumS=A(),cumN=A(),cumF=A(),util=A(),price=A(),bill=A(),rev=A(),revG=A(),revGm=A(),revC=A(),
@@ -647,6 +652,9 @@ function compute(p,tog){
     if(road){
       let cum=0; for(const r of road) if(Math.round(r.m)<=m) cum+=Math.max(0,r.mw||0);
       build[m]=Math.min(target,cum); // roadmap tranches are MW IT
+    } else if(groad){
+      let cum=0; for(const r of groad) if(Math.round(r.m)<=m) cum+=Math.max(0,r.g||0);
+      build[m]=Math.min(target,cum/Math.max(1,gpus)); // tranches are GPUs; build is servers
     } else build[m]=Math.min(target, target*Math.min(m,deployM)/deployM);
     online[m]=(m-lead>=1)?build[m-lead]:0;
     const dBuild=build[m]-build[m-1];
@@ -1344,7 +1352,7 @@ function syncToggles(){
    value overrides or the capacity mix — so the hall silently fell back to DEF sizing
    while the mix bar still advertised its blend. Run the preset itself instead. */
 function resetAll(){
-  S={...DEF, modes:DEF.modes.map(m=>({...m})), roadmap:DEF.roadmap.map(r=>({...r}))};
+  S={...DEF, modes:DEF.modes.map(m=>({...m})), roadmap:DEF.roadmap.map(r=>({...r})), gpuRoadmap:DEF.gpuRoadmap.map(r=>({...r}))};
   T={...TOG};
   PRIM.forEach(bindPrimary);bindGpuCount();bindColo();bindWsShare();bindToggles();
   setProduct(PROD);
@@ -1383,8 +1391,7 @@ function setModel(id){
    Re-applied on product switch so a blended PropCo figure never leaks into a GPU product. */
 function applyGpuFacility(m){
   m=m||GPU_MODELS.find(x=>x.id===GPU); if(!m)return;
-  if(m.liquid){S.facilityPerMW=16000000; S.pue=1.25;} // liquid AI hall (GB300)
-  else{S.facilityPerMW=12000000; S.pue=1.45;}          // air-cooled AI-ready
+  if(m.liquid){S.pue=1.20;} else{S.pue=1.20;} // the hall this fleet rents runs PUE 1.20
 }
 /* ── Token-as-a-Service modality mix table ── */
 function renderModes(){
@@ -1447,7 +1454,7 @@ function setProduct(id){
   });
   syncToggles(); renderGpuRates();
   setSpvFromProduct(prod);
-  if(!prod.gpu)syncRoadmap();
+  syncRoadmap(); // both products now schedule what they are made of
   renderRoadmap();
   renderRoadChart();
   syncInputs(); renderProdBar(); renderModelBar(); renderGradeBar();
@@ -1485,31 +1492,52 @@ function renderGradeBar(){
 }
 /* ── build roadmap ──────────────────────────────────────────
    Total site capacity is the sum of the tranches, so coloMW is derived, never typed. */
+function isGpuProd(){ return (PRODUCTS.find(p=>p.id===PROD)||{}).gpu!==false; }
+/* the roadmap schedules whatever this product is made of */
+function roadSpec(){
+  return isGpuProd()
+    ? {rows:S.gpuRoadmap||[], key:'g',  unit:'GPUs', step:'128', label:'GPUs'}
+    : {rows:S.roadmap||[],    key:'mw', unit:'MW IT', step:'1',  label:'MW'};
+}
+function roadTotal(){ const c=roadSpec(); return c.rows.reduce((t,r)=>t+Math.max(0,r[c.key]||0),0); }
 function roadITMW(){ return (S.roadmap||[]).reduce((t,r)=>t+Math.max(0,r.mw||0),0); }
 function roadGrossMW(){ const u=Math.max(0.01,Math.min(1,S.usableIT||1)); return roadITMW()/u; }
-function syncRoadmap(){ S.coloMW=roadITMW(); } // the roadmap already schedules IT load
+function syncRoadmap(){
+  const gpuRoad=isGpuProd()&&(S.gpuRoadmap||[]).length;
+  if(gpuRoad){ S.servers=Math.max(1,Math.round(roadTotal()/Math.max(1,S.gpus))); }
+  else if(!isGpuProd()){ S.coloMW=roadITMW(); } // the roadmap already schedules IT load
+  // fleet size is the roadmap's sum, so its own field stops being an input
+  [['gpuCount',1],['gpuCount_r',1]].forEach(([id])=>{
+    const el=document.getElementById(id); if(!el)return;
+    el.disabled=!!gpuRoad;
+    el.title=gpuRoad?'Set by the build roadmap':'';
+    const drv=el.closest('.drv'); if(drv&&id==='gpuCount')drv.classList.toggle('derived-row',!!gpuRoad);
+  });
+}
 function renderRoadmap(){
   const d=document.getElementById('d_road'), b=document.getElementById('body_road');
   if(!d||!b)return;
-  const isGpu=(PRODUCTS.find(p=>p.id===PROD)||{}).gpu!==false;
-  d.style.display=isGpu?'none':''; // GPU fleets ramp by server count, not by MW handover
-  if(isGpu)return;
-  const rows=(S.roadmap||[]).map((r,i)=>{
-    const cum=(S.roadmap||[]).slice(0,i+1).reduce((t,x)=>t+Math.max(0,x.mw||0),0);
+  const c=roadSpec();
+  d.style.display=c.rows.length?'':'none';
+  if(!c.rows.length)return;
+  let cum=0;
+  const rows=c.rows.map((r,i)=>{
+    cum+=Math.max(0,r[c.key]||0);
     return `<tr><td style="text-align:left">${r.k}</td>
-      <td><input class="mi" type="number" min="0" step="1" value="${r.mw}" oninput="setRoadMW(${i},this.value)"></td>
+      <td><input class="mi" type="number" min="0" step="${c.step}" value="${r[c.key]}" oninput="setRoadMW(${i},this.value)"></td>
       <td><input class="mi" type="number" min="1" step="1" value="${r.m}" oninput="setRoadMonth(${i},this.value)"></td>
-      <td>${cum}</td></tr>`;}).join('');
-  b.innerHTML=`<table class="modet"><thead><tr><th style="text-align:left">Tranche</th><th>MW</th><th>Month</th><th>Cum MW</th></tr></thead>
+      <td>${cum.toLocaleString()}</td></tr>`;}).join('');
+  b.innerHTML=`<table class="modet"><thead><tr><th style="text-align:left">Tranche</th><th>${c.label}</th><th>Month</th><th>Cum</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <div class="foot" id="roadFoot">${roadFoot()}</div>`;
 }
 /* Cumulative MW as a staircase, each bar split by the capacity mix — the mix bar
    above says what a MW is, this says when it arrives. */
 function roadChart(W){
-  const road=(S.roadmap||[]).slice().sort((a,b)=>(a.m||0)-(b.m||0));
+  const spec=roadSpec(), key=spec.key;
+  const road=spec.rows.slice().sort((a,b)=>(a.m||0)-(b.m||0));
   if(!road.length)return '';
-  const tot=road.reduce((t,r)=>t+Math.max(0,r.mw||0),0);
+  const tot=road.reduce((t,r)=>t+Math.max(0,r[key]||0),0);
   if(tot<=0)return '';
   // drawn at the container's real pixel width: stretching a viewBox to fit would
   // distort every label along with the shapes
@@ -1529,21 +1557,26 @@ function roadChart(W){
 
   const walk=k=>{const pts=[[padL,0]];let cum=0;
     road.forEach(r=>{const x=X(Math.round(r.m));
-      pts.push([x,cum*k]); cum+=Math.max(0,r.mw||0); pts.push([x,cum*k]);});
+      pts.push([x,cum*k]); cum+=Math.max(0,r[key]||0); pts.push([x,cum*k]);});
     pts.push([W-padR,cum*k]); return pts;};
   const fwd=k=>walk(k).map(([x,v],i)=>`${i?'L':'M'}${x.toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
   const rev=k=>walk(k).reverse().map(([x,v])=>`L${x.toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
 
-  let lo=0,bands='';
-  mixWeights().forEach(seg=>{const hi=lo+seg.w;
-    if(seg.w>0.001)bands+=`<path d="${fwd(hi)} ${rev(lo)} Z" fill="${MIX_CC[seg.k]}" fill-opacity=".92"/>`;
-    lo=hi;});
+  let bands='';
+  if(isGpuProd()){ // a fleet has no capacity mix to stack
+    bands=`<path d="${fwd(1)} ${rev(0)} Z" fill="#a5d600" fill-opacity=".92"/>`;
+  } else {
+    let lo=0;
+    mixWeights().forEach(seg=>{const hi=lo+seg.w;
+      if(seg.w>0.001)bands+=`<path d="${fwd(hi)} ${rev(lo)} Z" fill="${MIX_CC[seg.k]}" fill-opacity=".92"/>`;
+      lo=hi;});
+  }
 
-  const stepMW=tot>=120?50:(tot>=60?25:10);
+  const stepMW=(()=>{const t=Math.pow(10,Math.floor(Math.log10(tot)));const n=tot/t;return (n>=5?2:n>=2?0.5:0.25)*t;})();
   let grid='';
   for(let v=stepMW;v<=tot;v+=stepMW)
     grid+=`<line x1="${padL}" y1="${Y(v).toFixed(1)}" x2="${(W-padR).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#e4e7ec"/>`
-        + `<text x="${padL-5}" y="${(Y(v)+3.5).toFixed(1)}" fill="#6f7885" font-size="${narrow?9:10}" font-family="ui-monospace,monospace" text-anchor="end">${v}</text>`;
+        + `<text x="${padL-5}" y="${(Y(v)+3.5).toFixed(1)}" fill="#6f7885" font-size="${narrow?9:10}" font-family="ui-monospace,monospace" text-anchor="end">${v>=1000?(v/1000)+"k":v}</text>`;
 
   let ticks='',cum=0;
   road.forEach((r,i)=>{
@@ -1554,7 +1587,7 @@ function roadChart(W){
       ticks+=`<line x1="${x.toFixed(1)}" y1="${(H-padB).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(H-padB+4).toFixed(1)}" stroke="#ccd2db"/>`
            + `<text x="${x.toFixed(1)}" y="${H-8}" fill="#5a6270" font-size="${narrow?9:10}" font-family="ui-monospace,monospace" text-anchor="middle">${yr}</text>`;
       // the final total is called out at the right edge, so skip it here
-      if(!last)ticks+=`<text x="${x.toFixed(1)}" y="${(Y(cum)-7).toFixed(1)}" fill="#111318" font-size="${narrow?9:10}" font-weight="600" font-family="ui-monospace,monospace" text-anchor="middle">${cum}</text>`;
+      if(!last)ticks+=`<text x="${x.toFixed(1)}" y="${(Y(cum)-7).toFixed(1)}" fill="#111318" font-size="${narrow?9:10}" font-weight="600" font-family="ui-monospace,monospace" text-anchor="middle">${cum>=1000?(cum/1000).toFixed(1)+"k":cum}</text>`;
     }
   });
 
@@ -1569,37 +1602,46 @@ function roadChart(W){
     `<line x1="${padL}" y1="${(H-padB).toFixed(1)}" x2="${(W-padR).toFixed(1)}" y2="${(H-padB).toFixed(1)}" stroke="#ccd2db"/>`+
     ticks+
     (narrow
-      ? `<text x="${(W-padR).toFixed(1)}" y="${(Y(tot)-7).toFixed(1)}" fill="#111318" font-size="12" font-weight="700" font-family="ui-monospace,monospace" text-anchor="end">${tot} MW IT</text>`
-      : `<text x="${(W-padR+10).toFixed(1)}" y="${(Y(tot)+3).toFixed(1)}" fill="#111318" font-size="15" font-weight="700" font-family="ui-monospace,monospace">${tot}</text>`
-        +`<text x="${(W-padR+10).toFixed(1)}" y="${(Y(tot)+16).toFixed(1)}" fill="#6f7885" font-size="9" letter-spacing="1" font-family="ui-monospace,monospace">MW IT</text>`)+
+      ? `<text x="${(W-padR).toFixed(1)}" y="${(Y(tot)-7).toFixed(1)}" fill="#111318" font-size="12" font-weight="700" font-family="ui-monospace,monospace" text-anchor="end">${tot.toLocaleString()} ${spec.unit}</text>`
+      : `<text x="${(W-padR+10).toFixed(1)}" y="${(Y(tot)+3).toFixed(1)}" fill="#111318" font-size="15" font-weight="700" font-family="ui-monospace,monospace">${tot>=1000?(tot/1000).toFixed(1)+"k":tot}</text>`
+        +`<text x="${(W-padR+10).toFixed(1)}" y="${(Y(tot)+16).toFixed(1)}" fill="#6f7885" font-size="9" letter-spacing="1" font-family="ui-monospace,monospace">${spec.unit}</text>`)+
     `</svg>`;
 }
 function renderRoadChart(){
   const bar=document.getElementById('roadBar'); if(!bar)return;
-  const isGpu=(PRODUCTS.find(p=>p.id===PROD)||{}).gpu!==false;
-  if(isGpu){bar.classList.add('hidden'); bar.innerHTML=''; return;}
+  if(!roadSpec().rows.length){bar.classList.add('hidden'); bar.innerHTML=''; return;}
   bar.classList.remove('hidden');
-  const road=S.roadmap||[];
-  const tot=roadITMW();
-  const lastYr=road.length?String(road[road.length-1].k).slice(0,4):'';
+  const spec=roadSpec();
+  const tot=roadTotal();
+  const lastYr=spec.rows.length?String(spec.rows[spec.rows.length-1].k).slice(0,4):'';
+  const note=isGpuProd()
+    ? `<b class="num" style="color:var(--ink)">${tot.toLocaleString()} GPUs</b> by ${lastYr} · `+
+      `${Math.round(tot/Math.max(1,S.gpus)).toLocaleString()} nodes · `+
+      `${(tot/Math.max(1,S.gpus)*(S.powerKW+(S.netPowerKW||0))/1000).toFixed(1)} MW IT drawn from the hall`
+    : `<b class="num" style="color:var(--ink)">${tot} MW IT</b> by ${lastYr} · ${Math.round(roadGrossMW())} MW campus power at ${Math.round((S.usableIT||1)*100)}% usable · stacked by capacity type`;
   bar.innerHTML=`<div class="roadhead"><span class="mlabel">Build roadmap</span>`+
-    `<span class="roadnote"><b class="num" style="color:var(--ink)">${tot} MW IT</b> by ${lastYr} · ${Math.round(roadGrossMW())} MW campus power at ${Math.round((S.usableIT||1)*100)}% usable · stacked by capacity type</span></div>`+
+    `<span class="roadnote">${note}</span></div>`+
     roadChart(Math.max(260, Math.round(bar.clientWidth||1000)));
 }
 function roadFoot(){
-  const last=(S.roadmap||[]).reduce((t,r)=>Math.max(t,r.m||0),0);
+  const c=roadSpec(), last=c.rows.reduce((t,r)=>Math.max(t,r.m||0),0);
+  if(isGpuProd()){
+    const g=roadTotal(), nodes=Math.round(g/Math.max(1,S.gpus));
+    return `${g.toLocaleString()} GPUs by month ${last} — ${nodes.toLocaleString()} nodes, `+
+      `${(nodes*(S.powerKW+(S.netPowerKW||0))/1000).toFixed(1)} MW IT. Month 1 = Jan 2026.`;
+  }
   return `MW below is leasable IT load: ${roadITMW()} MW IT by month ${last}, `+
     `drawing ${Math.round(roadGrossMW())} MW of campus power. Month 1 = Jan 2026.`;
 }
 function setRoadMW(i,v){
   let x=parseFloat(v); if(isNaN(x)||x<0)x=0;
-  S.roadmap[i].mw=x; syncRoadmap();
+  const c=roadSpec(); c.rows[i][c.key]=x; syncRoadmap();
   const f=document.getElementById('roadFoot'); if(f)f.textContent=roadFoot();
   renderRoadChart(); syncInputs(); render();
 }
 function setRoadMonth(i,v){
   let x=Math.round(parseFloat(v)); if(isNaN(x)||x<1)x=1;
-  S.roadmap[i].m=x;
+  roadSpec().rows[i].m=x;
   const f=document.getElementById('roadFoot'); if(f)f.textContent=roadFoot();
   syncInputs(); renderRoadChart(); render();
 }
