@@ -429,7 +429,7 @@
 <script>
 /* ═══════════════ defaults & fields ═══════════════ */
 const DEF={
-  serverPrice:790000, elec:0.047, rental:7.76, years:9, netPct:0.12, transitMo:0,
+  serverPrice:790000, elec:0.047, rental:7.76, years:10, gpuLifeYears:5, netPct:0.12, transitMo:0,
   wsShare:0.70, // GPU sales mix: 70% wholesale/contract, 30% on-demand — blends the rental
 
   servers:256, gpus:8, deployMonths:3, leadMonths:2, lockYears:9, // contracts run the full hold: build to 2029, then five more years
@@ -560,6 +560,7 @@ const F_REV=[
 const F_COST=[
   {section:'CAPEX &amp; residual value'},
   {k:'psPer512',gpuOnly:true,label:'Deployment / professional fees',unit:'$M / 512 GPUs',step:0.1,scale:1e6,info:'One-time professional services to stand up the GPU fleet — cluster design, integration, fabric bring-up, commissioning — charged per 512-GPU pod and scaled linearly with the fleet, so a part-pod costs its share. Capitalised at kick-off and depreciated over the hold alongside the servers.'},
+  {k:'gpuLifeYears',gpuOnly:true,label:'GPU holding period',unit:'yrs before sale',step:1,info:'How long each tranche runs before it is sold at its resale value. Tranches are bought on the build roadmap and retired on this clock, so the fleet peaks when the last tranche lands and winds down from there — the roadmap is the purchase schedule, and nothing is bought to replace what leaves.'},
   {k:'residualPct',gpuOnly:true,label:'GPU / server resale value',unit:'% at exit',step:1,pct:true,info:'GPU server resale value at exit, as % of purchase price. Secondary-market data puts a 2-year-old H100 near 61% of original and a 3-year-old at 45-60%, with used A100s spanning 60-80%; CoreWeave has re-booked 2022 H100s at 95% of original contract pricing. A figure at the top of that range is a scarcity call, not a depreciation curve — it assumes the compute shortage outlasts the hold.'},
   {k:'netResidualPct',gpuOnly:true,label:'Network resale value',unit:'% at exit',step:1,pct:true,info:'Resale value of switches, optics and cabling at exit, as % of purchase price. Zero here: the fabric is written off over the hold rather than assumed to resell, which is the conservative call next to the GPUs it serves.'},
   {section:'OPEX — recurring'},
@@ -632,6 +633,11 @@ function compute(p,tog){
   // already states when capacity goes live, so the generic build lead time does not apply.
   const road=(!useGpu && Array.isArray(p.roadmap) && p.roadmap.length) ? p.roadmap : null;
   const groad=(useGpu && Array.isArray(p.gpuRoadmap) && p.gpuRoadmap.length) ? p.gpuRoadmap : null;
+  // Each tranche is bought on its roadmap month, runs for the GPU life, then is sold at
+  // its residual. Installed capex only ever grows; the fleet in service does not.
+  const lifeM=groad?Math.max(1,Math.round((p.gpuLifeYears||5)*12)):0;
+  const trs=groad?groad.map(r=>({m:Math.max(1,Math.round(r.m||1)), n:Math.max(0,r.g||0)/Math.max(1,gpus)})):[];
+  const srvCost=p.serverPrice, netCost=p.serverPrice*p.netPct;
   const roadMW=road?road.reduce((t,r)=>t+Math.max(0,r.mw||0),0):0;
   const shellTot=road?facTotal*Math.max(0,Math.min(1,p.shellPct||0)):0;
   const fitTot=road?facTotal-shellTot:0;
@@ -641,7 +647,7 @@ function compute(p,tog){
   const A=()=>new Array(N+1).fill(0);
   const build=A(),online=A(),capexS=A(),capexN=A(),capexF=A(),capex=A(),cumS=A(),cumN=A(),cumF=A(),util=A(),price=A(),bill=A(),rev=A(),revG=A(),revGm=A(),revC=A(),
         elec=A(),warr=A(),oth=A(),othF=A(),intR=A(),ga=A(),rentx=A(),trans=A(),ar=A(),dwc=A(),feeA=A(),cashopex=A(),deprS=A(),deprN=A(),deprF=A(),depr=A(),ebitda=A(),ebit=A(),
-        capexP=A(),deprP=A(),dDraw=A(),dRepay=A(),dInt=A(),dBal=A(),pbt=A(),tax=A(),ni=A(),cfo=A(),capexCf=A(),projFcf=A(),eqFcf=A(),cumEq=A();
+        liveSrv=A(),retSrv=A(),resale=A(),capexP=A(),deprP=A(),dDraw=A(),dRepay=A(),dInt=A(),dBal=A(),pbt=A(),tax=A(),ni=A(),cfo=A(),capexCf=A(),projFcf=A(),eqFcf=A(),cumEq=A();
   const totalCapex=(useGpu?target*p.serverPrice*(1+p.netPct):0)+facTotal+psTotal;
   const netCapex=useGpu?target*p.serverPrice*p.netPct:0;
   const totalDebt=totalCapex*debtPct;
@@ -656,7 +662,13 @@ function compute(p,tog){
       let cum=0; for(const r of groad) if(Math.round(r.m)<=m) cum+=Math.max(0,r.g||0);
       build[m]=Math.min(target,cum/Math.max(1,gpus)); // tranches are GPUs; build is servers
     } else build[m]=Math.min(target, target*Math.min(m,deployM)/deployM);
-    online[m]=(m-lead>=1)?build[m-lead]:0;
+    if(groad){
+      let live=0,ret=0;
+      trs.forEach(t=>{ if(t.m<=m){ if(m<t.m+lifeM)live+=t.n; if(m===t.m+lifeM)ret+=t.n; } });
+      liveSrv[m]=live; retSrv[m]=ret;
+      resale[m]=ret*(srvCost*p.residualPct+netCost*p.netResidualPct);
+    }
+    online[m]=groad?liveSrv[m]:((m-lead>=1)?build[m-lead]:0);
     const dBuild=build[m]-build[m-1];
     capexS[m]=useGpu?dBuild*p.serverPrice:0;
     capexN[m]=useGpu?dBuild*p.serverPrice*p.netPct:0;
@@ -689,12 +701,13 @@ function compute(p,tog){
     revC[m]=useColo?coloMW*1000*p.coloRate*(online[m]/target)*Math.pow(1+p.coloEsc,Math.floor((m-1)/12))*occ*renew:0;
     rev[m]=revG[m]+revC[m];
     elec[m]=useGpu?online[m]*pkEff*p.pue*H*p.elec:0; // colo tenants meter their own power
-    warr[m]=(m>Math.round((p.warrantyInclYears||0)*12))?(cumS[m]+cumN[m])*p.warrantyPct/12:0; // OEM warranty bundled in node price for the first warrantyInclYears
+    const liveCapex=groad?online[m]*(srvCost+netCost):(cumS[m]+cumN[m]);
+    warr[m]=(m>Math.round((p.warrantyInclYears||0)*12))?liveCapex*p.warrantyPct/12:0; // OEM warranty bundled in node price for the first warrantyInclYears
     // A GPU fleet's O&M tracks the kit it owns, so a share of capex is the right base.
     // A landlord's tracks megawatts of plant under management — tying it to build cost
     // would make the site more expensive to run purely because it cost more to build.
     const omInfl=Math.pow(1+p.gaInfl,Math.floor((m-1)/12));
-    oth[m]=useGpu?(cumS[m]+cumN[m]+cumF[m])*p.otherPct/12*omInfl
+    oth[m]=useGpu?(liveCapex+cumF[m])*p.otherPct/12*omInfl
                  :build[m]*(p.omPerMWYr||0)/12*omInfl;
     othF[m]=useGpu?cumF[m]*p.otherPct/12*omInfl:oth[m];
     intR[m]=useFac?gpuMW*1000*p.coloRate*(online[m]/target)*Math.pow(1+p.coloEsc,Math.floor((m-1)/12)):0;
@@ -704,8 +717,13 @@ function compute(p,tog){
     cashopex[m]=elec[m]+warr[m]+oth[m]+ga[m]+rentx[m]+trans[m];
     ar[m]=useWC?rev[m]*p.arDays/30.4:0;
     dwc[m]=ar[m]-ar[m-1];
-    deprS[m]=Math.min(cumS[m]*(1-p.residualPct)/(p.years*12), Math.max(0,cumS[m]*(1-p.residualPct)-accDeprS)); accDeprS+=deprS[m];
-    deprN[m]=Math.min(cumN[m]*(1-p.netResidualPct)/(p.years*12), Math.max(0,cumN[m]*(1-p.netResidualPct)-accDeprN)); accDeprN+=deprN[m];
+    if(groad){
+      deprS[m]=online[m]*srvCost*(1-p.residualPct)/lifeM;
+      deprN[m]=online[m]*netCost*(1-p.netResidualPct)/lifeM;
+    } else {
+      deprS[m]=Math.min(cumS[m]*(1-p.residualPct)/(p.years*12), Math.max(0,cumS[m]*(1-p.residualPct)-accDeprS)); accDeprS+=deprS[m];
+      deprN[m]=Math.min(cumN[m]*(1-p.netResidualPct)/(p.years*12), Math.max(0,cumN[m]*(1-p.netResidualPct)-accDeprN)); accDeprN+=deprN[m];
+    }
     deprF[m]=useFac?Math.min(cumF[m]/(p.facilityLife*12), Math.max(0,cumF[m]-accDeprF)):0; accDeprF+=deprF[m];
     // the two fee scopes amortise on their own asset's life: the hall's over the
     // facility life, the fleet's over the hold. Gating both on useFac left a leased
@@ -730,13 +748,14 @@ function compute(p,tog){
     ni[m]=pbt[m]-tax[m];
     cfo[m]=ni[m]+depr[m]-dwc[m];
     capexCf[m]=-capex[m];
-    projFcf[m]=ebitda[m]-Math.max(0,ebit[m]*taxRate)+capexCf[m]-dwc[m];
-    eqFcf[m]=cfo[m]+capexCf[m]+dDraw[m]-dRepay[m];
+    projFcf[m]=ebitda[m]-Math.max(0,ebit[m]*taxRate)+capexCf[m]-dwc[m]+resale[m];
+    eqFcf[m]=cfo[m]+capexCf[m]+dDraw[m]-dRepay[m]+resale[m];
     cumEq[m]=cumEq[m-1]+eqFcf[m];
   }
   // target is servers for a GPU fleet but megawatts for a landlord, so this line
   // was valuing 120 MW as if they were 120 servers to resell
-  const servResidual=useGpu?target*p.serverPrice*p.residualPct:0;
+  const heldAtN=groad?trs.reduce((t,x)=>t+((x.m<=N&&N<x.m+lifeM)?x.n:0),0):target;
+  const servResidual=useGpu?heldAtN*p.serverPrice*p.residualPct:0;
   const facNBV=useFac?(facTotal+psFac)*Math.max(0,(p.facilityLife-p.years)/p.facilityLife):0;
   let facExit=facNBV, coloLeaseVal=0;
   if(useColo&&useFac&&mwIT>0){
@@ -748,7 +767,7 @@ function compute(p,tog){
     coloLeaseVal=Math.max(0,coloNOI)*af;
     facExit=gpuShareNBV+Math.max(coloShareNBV,coloLeaseVal);
   }
-  const residual=servResidual+netCapex*p.netResidualPct+facExit;
+  const residual=servResidual+(groad?heldAtN*netCost:netCapex)*p.netResidualPct+facExit;
   const debtEnd=dBal[N];
   const ltmEb=(()=>{let s=0;for(let m=Math.max(1,N-11);m<=N;m++)s+=ebitda[m];return s;})();
   const ltmEbMkt=(()=>{let s=0;for(let m=Math.max(1,N-11);m<=N;m++)s+=(revGm[m]+revC[m]-cashopex[m]);return s;})();
