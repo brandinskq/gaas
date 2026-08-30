@@ -250,6 +250,13 @@
   .dtag{margin-left:6px;font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:.14em;
     text-transform:uppercase;color:var(--compute);border:1px solid var(--compute-dim);
     border-radius:2px;padding:1px 4px;vertical-align:2px}
+  /* auto layout gave the two inputs 73% of a 346px table and wrapped the labels */
+  .roadtbl{table-layout:fixed;width:100%}
+  .roadtbl th:nth-child(1),.roadtbl td:nth-child(1){width:31%;white-space:nowrap}
+  .roadtbl th:nth-child(2),.roadtbl td:nth-child(2){width:25%}
+  .roadtbl th:nth-child(3),.roadtbl td:nth-child(3){width:18%}
+  .roadtbl th:nth-child(4),.roadtbl td:nth-child(4){width:26%;white-space:nowrap;font-weight:600;color:var(--ink)}
+  .roadtbl input.mi{width:100%;min-width:0}
   .ratedot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:7px;vertical-align:baseline}
   .ratesum{font-family:var(--mono);font-size:10.5px;color:var(--muted);padding:6px 0 2px;
     border-top:1px solid var(--line);margin-top:4px;text-align:right}
@@ -1325,7 +1332,8 @@ function buildGroup(id,fields){
       return `<div class="arow" id="wrap_${f.k}">${lbl(f)}
         <span class="val"><select id="a_${f.k}">${f.options.map(v=>`<option value="${v}"${v===S[f.k]?' selected':''}>${v} · ${(v*S.gpus).toLocaleString()} GPU</option>`).join('')}</select><span class="unit">${f.unit}</span></span></div>`;
     }
-    const disp=f.pct?+(S[f.k]*100).toFixed(4):(f.scale?+(S[f.k]/f.scale).toFixed(4):S[f.k]);
+    // four decimals is precision for a typed value and noise for a derived one
+    const disp=f.pct?+(S[f.k]*100).toFixed(f.derived?1:4):(f.scale?+(S[f.k]/f.scale).toFixed(4):S[f.k]);
     return `<div class="arow" id="wrap_${f.k}">${lbl(f)}
       <span class="val"><input type="number" id="a_${f.k}" step="${f.step}" value="${disp}"><span class="unit">${f.unit}</span></span></div>`;}).join('');
   fields.forEach(f=>{if(f.section||f.custom)return; const i=document.getElementById('a_'+f.k);
@@ -1546,7 +1554,7 @@ function renderRoadmap(){
       <td><input class="mi" type="number" min="0" step="${c.step}" value="${r[c.key]}" oninput="setRoadMW(${i},this.value)"></td>
       <td><input class="mi" type="number" min="1" step="1" value="${r.m}" oninput="setRoadMonth(${i},this.value)"></td>
       <td>${cum.toLocaleString()}</td></tr>`;}).join('');
-  b.innerHTML=`<table class="modet"><thead><tr><th style="text-align:left">Tranche</th><th>${c.label}</th><th>Month</th><th>Cum</th></tr></thead>
+  b.innerHTML=`<table class="modet roadtbl"><thead><tr><th style="text-align:left">Tranche</th><th>${c.label}</th><th>Month</th><th>Cum</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <div class="foot" id="roadFoot">${roadFoot()}</div>`;
 }
@@ -1597,17 +1605,22 @@ function roadChart(W){
     grid+=`<line x1="${padL}" y1="${Y(v).toFixed(1)}" x2="${(W-padR).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#e4e7ec"/>`
         + `<text x="${padL-5}" y="${(Y(v)+3.5).toFixed(1)}" fill="#6f7885" font-size="${narrow?9:10}" font-family="ui-monospace,monospace" text-anchor="end">${v>=1000?(v/1000)+"k":v}</text>`;
 
+  // Few enough tranches and room to show them: label every step with its exact
+  // running total, and put the tranche's own name on the axis. Abbreviating a GPU
+  // count to "20.5k" loses the number the reader came for.
+  const labelAll=!narrow && road.length<=9;
+  const fmt=v=>labelAll?Math.round(v).toLocaleString():(v>=1000?(v/1000).toFixed(1)+'k':String(v));
   let ticks='',cum=0;
   road.forEach((r,i)=>{
-    cum+=Math.max(0,r.mw||0);
+    cum+=Math.max(0,r[key]||0);
     const yr=String(r.k).slice(0,4), last=i===road.length-1;
-    if(last||String(road[i+1].k).slice(0,4)!==yr){
-      const x=X(Math.round(r.m));
-      ticks+=`<line x1="${x.toFixed(1)}" y1="${(H-padB).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(H-padB+4).toFixed(1)}" stroke="#ccd2db"/>`
-           + `<text x="${x.toFixed(1)}" y="${H-8}" fill="#5a6270" font-size="${narrow?9:10}" font-family="ui-monospace,monospace" text-anchor="middle">${yr}</text>`;
-      // the final total is called out at the right edge, so skip it here
-      if(!last)ticks+=`<text x="${x.toFixed(1)}" y="${(Y(cum)-7).toFixed(1)}" fill="#111318" font-size="${narrow?9:10}" font-weight="600" font-family="ui-monospace,monospace" text-anchor="middle">${cum>=1000?(cum/1000).toFixed(1)+"k":cum}</text>`;
-    }
+    const yearEnd=last||String(road[i+1].k).slice(0,4)!==yr;
+    if(!labelAll && !yearEnd)return;
+    const x=X(Math.round(r.m));
+    ticks+=`<line x1="${x.toFixed(1)}" y1="${(H-padB).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(H-padB+4).toFixed(1)}" stroke="#ccd2db"/>`
+         + `<text x="${x.toFixed(1)}" y="${H-8}" fill="${yearEnd?'#5a6270':'#8a929e'}" font-size="${narrow?9:10}" font-family="ui-monospace,monospace" text-anchor="middle">${labelAll?r.k:yr}</text>`;
+    // the final total is called out at the right edge, so skip it here
+    if(!last)ticks+=`<text x="${x.toFixed(1)}" y="${(Y(cum)-7).toFixed(1)}" fill="${yearEnd?'#111318':'#5a6270'}" font-size="${narrow?9:10}" font-weight="${yearEnd?600:500}" font-family="ui-monospace,monospace" text-anchor="middle">${fmt(cum)}</text>`;
   });
 
   const bx0=padL, bx1=X(firstM), bw=bx1-bx0;
@@ -1622,7 +1635,7 @@ function roadChart(W){
     ticks+
     (narrow
       ? `<text x="${(W-padR).toFixed(1)}" y="${(Y(tot)-7).toFixed(1)}" fill="#111318" font-size="12" font-weight="700" font-family="ui-monospace,monospace" text-anchor="end">${tot.toLocaleString()} ${spec.unit}</text>`
-      : `<text x="${(W-padR+10).toFixed(1)}" y="${(Y(tot)+3).toFixed(1)}" fill="#111318" font-size="15" font-weight="700" font-family="ui-monospace,monospace">${tot>=1000?(tot/1000).toFixed(1)+"k":tot}</text>`
+      : `<text x="${(W-padR+10).toFixed(1)}" y="${(Y(tot)+3).toFixed(1)}" fill="#111318" font-size="15" font-weight="700" font-family="ui-monospace,monospace">${Math.round(tot).toLocaleString()}</text>`
         +`<text x="${(W-padR+10).toFixed(1)}" y="${(Y(tot)+16).toFixed(1)}" fill="#6f7885" font-size="9" letter-spacing="1" font-family="ui-monospace,monospace">${spec.unit}</text>`)+
     `</svg>`;
 }
