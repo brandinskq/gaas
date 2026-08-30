@@ -257,6 +257,13 @@
   .roadtbl th:nth-child(3),.roadtbl td:nth-child(3){width:18%}
   .roadtbl th:nth-child(4),.roadtbl td:nth-child(4){width:26%;white-space:nowrap;font-weight:600;color:var(--ink)}
   .roadtbl input.mi{width:100%;min-width:0}
+  .chanrow{padding:8px 0 9px;border-bottom:1px solid var(--line)}
+  .chanrow:last-of-type{border-bottom:none}
+  .chanrow .cname{display:flex;align-items:center;font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:6px}
+  .chanrow .cfields{display:flex;gap:12px;align-items:center}
+  .chanrow .cfield{display:flex;align-items:center;gap:7px;flex:1;min-width:0}
+  .chanrow .cfield input[type=number]{width:100%;min-width:0}
+  .chanrow .cfield .unit{width:auto;white-space:nowrap;flex:none}
   .ratedot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:7px;vertical-align:baseline}
   .ratesum{font-family:var(--mono);font-size:10.5px;color:var(--muted);padding:6px 0 2px;
     border-top:1px solid var(--line);margin-top:4px;text-align:right}
@@ -451,7 +458,7 @@ const DEF={
   utilWS:1.0, utilOD:0.90, // sold-through by channel: contract is take-or-pay, on-demand runs at 90%
   powerKW:14, netPowerKW:1.4, pue:1.20, warrantyPct:0.05, warrantyInclYears:3, otherPct:0.035, residualPct:0.80, netResidualPct:0, tax:0.15, saudiPct:1.00, occupancy:0.90, rackKW:0,
   gaPct:0.12, gaInfl:0.08, omPerMWYr:1500000, renewUplift:0.10,
-  facilityPerMW:12000000, facilityLife:25, psPerMW:424000, psPer512:2400000, shellPct:0.25, usableIT:0.80,
+  facilityPerMW:12000000, facilityLife:25, psPerMW:424000, psPerGpu:4687.5, // $2.4M per 512-GPU pod, expressed per card shellPct:0.25, usableIT:0.80,
   // IDC build roadmap — MW handed over, and the project month each tranche goes live.
   // Month 1 = Jan 2026, so month 12 = end of 2026 and the 2027 quarters land on 15/18/21/24.
   // MW IT handed over — campus gross power is this divided by the usable share
@@ -566,7 +573,7 @@ const F_REV=[
 ];
 const F_COST=[
   {section:'CAPEX &amp; residual value'},
-  {k:'psPer512',gpuOnly:true,label:'Deployment / professional fees',unit:'$M / 512 GPUs',step:0.1,scale:1e6,info:'One-time professional services to stand up the GPU fleet — cluster design, integration, fabric bring-up, commissioning — charged per 512-GPU pod and scaled linearly with the fleet, so a part-pod costs its share. Capitalised at kick-off and depreciated over the hold alongside the servers.'},
+  {k:'psPerGpu',gpuOnly:true,label:'Deployment / professional fees',unit:'$ / GPU',step:100,info:'One-time professional services to stand up the GPU fleet — cluster design, integration, fabric bring-up, commissioning. Quoted per card: $4,687.50 is the $2.4M-per-512-GPU pod rate divided down, so it scales with any fleet size. Capitalised when the kit lands and depreciated over the life of the servers it commissions.'},
   {k:'gpuLifeYears',gpuOnly:true,label:'GPU holding period',unit:'yrs before sale',step:1,info:'How long each tranche runs before it is sold at its resale value. Tranches are bought on the build roadmap and retired on this clock, so the fleet peaks when the last tranche lands and winds down from there — the roadmap is the purchase schedule, and nothing is bought to replace what leaves.'},
   {k:'residualPct',gpuOnly:true,label:'GPU / server resale value',unit:'% at exit',step:1,pct:true,info:'GPU server resale value at exit, as % of purchase price. Secondary-market data puts a 2-year-old H100 near 61% of original and a 3-year-old at 45-60%, with used A100s spanning 60-80%; CoreWeave has re-booked 2022 H100s at 95% of original contract pricing. A figure at the top of that range is a scarcity call, not a depreciation curve — it assumes the compute shortage outlasts the hold.'},
   {k:'netResidualPct',gpuOnly:true,label:'Network resale value',unit:'% at exit',step:1,pct:true,info:'Resale value of switches, optics and cabling at exit, as % of purchase price. Zero here: the fabric is written off over the hold rather than assumed to resell, which is the conservative call next to the GPUs it serves.'},
@@ -631,7 +638,7 @@ function compute(p,tog){
   // stand up, but kept out of the O&M base — fees create no plant to maintain.
   // Two distinct scopes: the hall is developed per MW, the fleet is deployed per pod.
   const psFac=useFac?mwIT*(p.psPerMW||0):0;
-  const psGpu=useGpu?(target*gpus/512)*(p.psPer512||0):0;
+  const psGpu=useGpu?(target*gpus)*(p.psPerGpu||0):0;
   const psTotal=psFac+psGpu;
   const facPerServer=(useFac&&useGpu)?facTotal*(gpuMW/Math.max(mwIT,1e-9))/Math.max(1,target):0;
 
@@ -736,7 +743,7 @@ function compute(p,tog){
     // facility life, the fleet's over the hold. Gating both on useFac left a leased
     // deployment fee capitalised in cash and never charged to the P&L at all.
     const dPF=useFac?Math.min(psFac/(p.facilityLife*12), Math.max(0,psFac-accDeprP)):0; accDeprP+=dPF;
-    const dPG=useGpu?Math.min(psGpu/(p.years*12), Math.max(0,psGpu-accDeprPG)):0; accDeprPG+=dPG;
+    const dPG=useGpu?Math.min(psGpu/((p.gpuLifeYears||p.years)*12), Math.max(0,psGpu-accDeprPG)):0; accDeprPG+=dPG;
     deprP[m]=dPF+dPG;
     depr[m]=deprS[m]+deprN[m]+deprF[m]+deprP[m];
     ebitda[m]=rev[m]-cashopex[m];
@@ -821,7 +828,7 @@ function compute(p,tog){
             net:(p.serverPrice*p.netPct*(1-p.netResidualPct)/(p.years*12)+p.transitMo/Math.max(1,target))/ssBill,
             facility:useFac?(facGpuPerServer/(p.facilityLife*12))/ssBill:0,
             dev:((useFac?psGpuPerServer/(p.facilityLife*12):0)
-                +(gpus/512)*(p.psPer512||0)/(p.years*12))/ssBill,
+                +gpus*(p.psPerGpu||0)/((p.gpuLifeYears||p.years)*12))/ssBill,
             rent:rentPerServerMo/ssBill,
             elec:p.powerKW*p.pue*H*p.elec/ssBill,
             netpower:(p.netPowerKW||0)*p.pue*H*p.elec/ssBill,
@@ -1716,9 +1723,14 @@ function gpuBlendNote(){
 function renderGpuRates(){
   const b=document.getElementById('gpuRates'); if(!b)return;
   const m=GPU_MODELS.find(x=>x.id===GPU); if(!m)return;
-  const row=(k,label,dot,price,fill)=>`<div class="arow"><span><i class="ratedot" style="background:${dot}"></i>${label}</span>
-    <span class="val"><input type="number" id="grate_${k}" step="0.10" value="${price.toFixed(2)}"><span class="unit">$/hr</span>
-      <input type="number" id="gfill_${k}" step="5" min="0" max="100" value="${Math.round(fill*100)}"><span class="unit">% sold</span></span></div>`;
+  // a channel name plus two fields will not fit one 376px row without the label
+  // wrapping mid-phrase, so the name gets its own line and the fields share the next
+  const row=(k,label,dot,price,fill)=>`<div class="chanrow">
+    <div class="cname"><i class="ratedot" style="background:${dot}"></i>${label}</div>
+    <div class="cfields">
+      <span class="cfield"><input type="number" id="grate_${k}" step="0.10" value="${price.toFixed(2)}"><span class="unit">$ / GPU&#183;hr</span></span>
+      <span class="cfield"><input type="number" id="gfill_${k}" step="5" min="0" max="100" value="${Math.round(fill*100)}"><span class="unit">% sold</span></span>
+    </div></div>`;
   b.innerHTML=row('ws','Wholesale / contract','#a5d600',m.ws,S.utilWS)+row('od','On-demand','#1a7fa8',m.od,S.utilOD)+
     `<div class="ratesum" id="grateSum">${gpuBlendNote()}</div>`;
   [['ws','utilWS'],['od','utilOD']].forEach(([k,key])=>{
