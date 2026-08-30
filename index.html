@@ -429,10 +429,10 @@
 <script>
 /* ═══════════════ defaults & fields ═══════════════ */
 const DEF={
-  serverPrice:790000, elec:0.047, rental:7.76, years:5, netPct:0.12, transitMo:0,
+  serverPrice:790000, elec:0.047, rental:7.76, years:9, netPct:0.12, transitMo:0,
   wsShare:0.70, // GPU sales mix: 70% wholesale/contract, 30% on-demand — blends the rental
 
-  servers:256, gpus:8, deployMonths:3, leadMonths:2, lockYears:5,
+  servers:256, gpus:8, deployMonths:3, leadMonths:2, lockYears:9, // contracts run the full hold: build to 2029, then five more years
   // GPUs handed over per tranche; servers is derived from the total. Month 1 = Jan 2026.
   gpuRoadmap:[
     {k:'2026',    m:12, g:1024},
@@ -717,7 +717,7 @@ function compute(p,tog){
     ebitda[m]=rev[m]-cashopex[m];
     ebit[m]=ebitda[m]-depr[m];
     dDraw[m]=capex[m]*debtPct;
-    const amortStart = road?shellEnd:deployM; // first capacity earning, not a GPU install ramp
+    const amortStart = road?shellEnd:(groad?Math.max(1,Math.round(groad[0].m||1)):deployM); // first capacity earning, not an install ramp
     const repaying = m>amortStart && m<=amortStart+p.debtTenor;
     dRepay[m]=repaying?princPerMo:0;
     const openBal=dBal[m-1];
