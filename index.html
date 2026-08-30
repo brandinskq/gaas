@@ -385,13 +385,8 @@
           <div class="val"><input type="number" id="occupancy" step="5"><span class="unit">%</span></div></div>
         <input type="range" id="occupancy_r" min="40" max="100" step="5">
       </div>
-      <div class="drv" id="drv_idc">
-        <div class="row rowstack"><label>IDC strategy<span class="hint">own-build capex vs lease colocation</span></label>
-          <div class="modeseg"><button id="mode_build" class="modebtn" onclick="setIdcMode(true)">Own-build</button><button id="mode_lease" class="modebtn" onclick="setIdcMode(false)">Lease / colocation</button></div>
-        </div>
-      </div>
       <div class="drv" id="drv_lease">
-        <div class="row"><label>Colocation rent<span class="hint">rack + power capacity, excl. metered power</span><span class="ttip" data-tip="Rent paid per kW of IT capacity, excl. metered power — the end user is billed power directly. Set to the AI DC SPV&amp;#39;s colocation rate of $250/kW/mo, the intra-group transfer price for hall space. No facility capex, no depreciation: the hall is pure opex to this business.">ⓘ</span></label>
+        <div class="row"><label>Hall rent — from Obsidian Rack<span class="hint">rack + power capacity, excl. metered power</span><span class="ttip" data-tip="Rent paid per kW of IT capacity, excl. metered power — the end user is billed power directly. Paid to Obsidian Rack, the AI DC SPV, at its colocation rate of $250/kW/mo — the intra-group transfer price for hall space. No facility capex, no depreciation: the hall is pure opex to this business.">ⓘ</span></label>
           <div class="val"><input type="number" id="coloPerKWMo" step="10"><span class="unit">$ / kW / mo</span></div></div>
         <input type="range" id="coloPerKWMo_r" min="80" max="400" step="10">
       </div>
@@ -495,7 +490,7 @@ let GPU='b300'; // current model id
 /* ═══════════════ product definitions ═══════════════ */
 /* each product = a switch preset + default overrides. Engine unchanged. */
 const PRODUCTS=[
-  {id:'ownbuild', name:'GPU as a Service', sub:'run the GPU cloud, lease the hall from the AI DC SPV — no facility capex',
+  {id:'ownbuild', name:'GPU as a Service', sub:'run the GPU cloud, lease the hall from Obsidian Rack — no facility capex',
    spv:'GPU as a Service', tog:{facility:false, colo:false, debt:true, exit:false}, gpu:true,
    // capacity is rented from the AI DC SPV at its colocation rate, so there is no
    // facility to build, depreciate or exit — the hall shows up as a monthly fee
@@ -1271,9 +1266,9 @@ function bindColo(){
 }
 function setIdcMode(build){
   T.facility=build;
-  document.getElementById('mode_build').classList.toggle('on',build);
-  document.getElementById('mode_lease').classList.toggle('on',!build);
-  document.getElementById('drv_lease').style.display=build?'none':'';
+  const mb=document.getElementById('mode_build'); if(mb)mb.classList.toggle('on',build);
+  const ml=document.getElementById('mode_lease'); if(ml)ml.classList.toggle('on',!build);
+  const dl=document.getElementById('drv_lease'); if(dl)dl.style.display=build?'none':'';
   const tf=document.getElementById('t_facility'); if(tf)tf.checked=build;
   refreshDisabled(F_REV);refreshDisabled(F_COST);refreshDisabled(F_FIN);
   render();
