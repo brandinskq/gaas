@@ -469,7 +469,7 @@ const DEF={
     {k:'2029 Q1', m:39, mw:15}, {k:'2029 Q2', m:42, mw:15}, {k:'2029 Q3', m:45, mw:15}, {k:'2029 Q4', m:48, mw:15}],
   siteRentPerMW:150000, coloPerKWMo:200,
   arDays:45, feePct:0.01, exitMult:8,
-  debtPct:0.60, debtRate:0.08, debtTenor:120, disc:0.12,
+  debtPct:0.60, debtRate:0.08, debtTenor:60, disc:0.12, // repays m49-108, exactly as the last tranche is sold
   // Token-as-a-Service modality mix — each modality bills the way industry does, priced off named anchors:
   //   Text: per 1M tokens, split in/out — GLM-5.2 ($1.40 in / $4.40 out).
   //   Audio: per 1M tokens, split in/out (realtime audio token rates).
@@ -665,7 +665,10 @@ function compute(p,tog){
   const totalCapex=(useGpu?target*p.serverPrice*(1+p.netPct):0)+facTotal+psTotal;
   const netCapex=useGpu?target*p.serverPrice*p.netPct:0;
   const totalDebt=totalCapex*debtPct;
-  const princPerMo=totalDebt/Math.max(1,p.debtTenor);
+  // Capitalised construction interest means the balance at conversion is larger than
+  // the original commitment, so amortising the commitment leaves a stub outstanding.
+  // The term loan amortises whatever converts.
+  let convBal=null, princPerMo=totalDebt/Math.max(1,p.debtTenor);
   let accDeprS=0,accDeprN=0,accDeprF=0,accDeprP=0,accDeprPG=0;
 
   for(let m=1;m<=N;m++){
@@ -755,7 +758,8 @@ function compute(p,tog){
     const amortStart = road?Math.max(...road.map(r=>Math.round(r.m||1)))
                      :(groad?Math.max(...groad.map(r=>Math.round(r.m||1))):deployM);
     const repaying = m>amortStart && m<=amortStart+p.debtTenor;
-    dRepay[m]=repaying?princPerMo:0;
+    if(m===amortStart+1){convBal=dBal[m-1]; princPerMo=convBal/Math.max(1,p.debtTenor);}
+    dRepay[m]=repaying?Math.min(princPerMo,dBal[m-1]+dDraw[m]):0;
     const openBal=dBal[m-1];
     dInt[m]=openBal*p.debtRate/12;
     // Standard project-finance practice, and the only way DSCR means anything before
