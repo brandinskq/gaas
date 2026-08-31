@@ -457,7 +457,7 @@ const DEF={
   rentalDecline:0.12, utilStart:1.0, utilSteady:1.0, utilRamp:6,
   utilWS:1.0, utilOD:0.90, // sold-through by channel: contract is take-or-pay, on-demand runs at 90%
   powerKW:14, netPowerKW:1.4, pue:1.20, warrantyPct:0.05, warrantyInclYears:5, otherPct:0.035, residualPct:0.80, netResidualPct:0, tax:0.15, saudiPct:1.00, occupancy:0.90, rackKW:0,
-  gaPct:0.12, gaInfl:0.08, omPerMWYr:1500000, renewUplift:0.10,
+  gaPct:0.12, gaInfl:0.03, omPerMWYr:1500000, renewUplift:0.10,
   facilityPerMW:12000000, facilityLife:25, psPerMW:424000, psPerGpu:4687.5, shellPct:0.25, usableIT:0.80, // psPerGpu = $2.4M per 512-GPU pod, expressed per card
   // IDC build roadmap — MW handed over, and the project month each tranche goes live.
   // Month 1 = Jan 2026, so month 12 = end of 2026 and the 2027 quarters land on 15/18/21/24.
@@ -565,9 +565,7 @@ const F_REV=[
   {k:'leadMonths',gpuOnly:true,label:'Build lead time',unit:'months (capex→rev)',step:1,tog:'phase',info:'Commissioning gap between spending capex and earning revenue — money out, debt clock running, no income. The deepest part of the Year-1 cash hole.'},
   {k:'lockYears',gpuOnly:true,label:'Contract lock period',unit:'years',step:1,tog:'lock',info:'Years the rental price is contractually fixed. The single most important bankability lever — locked revenue is what makes the debt serviceable.'},
   {k:'rentalDecline',gpuOnly:true,label:'Market erosion / yr',unit:'%',step:1,pct:true,tog:'decline',info:'Annual decline in market GPU-hour price as newer silicon ships. Applies after the lock period expires. H100 fell ~40%/yr post-peak.'},
-  {k:'utilStart',gpuOnly:true,label:'Utilization — start',unit:'%',step:1,pct:true,tog:'util',info:'Billed hours ÷ available hours in month 1. New clusters ramp from partial fill; 45% reflects early lease-up.'},
   {k:'utilSteady',gpuOnly:true,derived:'blend',label:'Utilization — steady',unit:'%',step:1,pct:true,info:'Mature utilisation once ramped. 85% is strong for contracted capacity; hyperscalers assume 70-90%.'},
-  {k:'utilRamp',gpuOnly:true,label:'Utilization ramp',unit:'months',step:1,tog:'util',info:'Months to climb from start to steady utilisation as customers onboard.'},
   {k:'arDays',label:'Receivable days (AR)',unit:'days',step:5,tog:'wc',info:'Days between billing and cash collection. Working-capital drag funded by equity until it unwinds.'},
   {k:'renewUplift',propcoOnly:true,label:'Renewal uplift',unit:'% at re-lease',step:1,pct:true,tog:'colo',info:'One-time step-up in the lease rate when the initial term expires and space is re-let at market. Digital Realty booked cash renewal spreads of +6.1% to +8.0% through 2025, and close to +20% in its hyperscale segment; annual escalation continues on top of this. Set 0 to renew flat.'},
 ];
@@ -594,7 +592,6 @@ const F_FIN=[
   {k:'dscrCov',label:'DSCR covenant',unit:'x minimum',step:0.05,tog:'debt',info:'Minimum debt service coverage the facility must maintain. Data centre paper is quoted at 1.35-1.45x, and CMBS at 1.30-1.45x; term sheets usually set two levels, a lock-up that suspends distributions to equity and a lower one that is an event of default. This is the lock-up level, and the verdict tests against it.'},
   {k:'debtTenor',label:'Debt tenor',unit:'months',step:6,tog:'debt',info:'Months to fully repay principal, counted from first capacity handover. Short tenor crushes early DSCR; matching tenor to asset life is the fix. Data centre project debt is typically termed 7-12 years against a 25-year asset.'},
   {k:'feePct',label:'Debt arrangement fee',unit:'% of loan',step:0.25,pct:true,tog:'debt',info:'One-time debt arrangement / structuring fee, % of loan, expensed at close.'},
-  {k:'exitMult',label:'Exit EV/EBITDA',unit:'x',step:0.5,tog:'exit',info:'EV/EBITDA multiple paid by a buyer at exit (going-concern sale). Data centre platform precedents cluster at 18-24x forward EBITDA — InterXion 18.6x, QTS 19.0x, CyrusOne 22.2x, Switch 22.9x, CoreSite 23.7x — with HPC/AI sites higher again. 15x is conservative for contracted colocation; 8x is conservative for GPU cash flows.'},
   {k:'disc',label:'Hurdle / discount rate',unit:'%',step:0.5,pct:true},
 ];
 
@@ -1517,6 +1514,12 @@ function setProduct(id){
   // switches that only steer GPU economics have nothing to say about a landlord
   ['colo','lock','decline','util','phase','exitcur','ga'].forEach(k=>{
     const el=document.getElementById('tog_'+k); if(el)el.style.display=prod.gpu?'':'none';
+  });
+  // and three with nothing to switch here: the fleet is held to disposal so there is
+  // no exit multiple, it sells on contract so there is nothing to re-contract, and
+  // sold-through is derived from the channel mix rather than ramped
+  ['exit','exitcur','util'].forEach(k=>{
+    const el=document.getElementById('tog_'+k); if(el)el.style.display='none';
   });
   syncToggles(); renderGpuRates();
   setSpvFromProduct(prod);
