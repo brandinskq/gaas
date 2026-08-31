@@ -452,7 +452,17 @@ const DEF={
     {k:'2026',    m:12, g:1024},
     {k:'2027 H1', m:18, g:2048},  {k:'2027 H2', m:24, g:2024},
     {k:'2028 H1', m:30, g:5144},  {k:'2028 H2', m:36, g:10240},
-    {k:'2029 H1', m:42, g:10240}, {k:'2029 H2', m:48, g:30992}],
+    {k:'2029 H1', m:42, g:10240}, {k:'2029 H2', m:48, g:30992},
+    // r:1 marks a replacement, not growth. Each cohort is sold at 5 years and an
+    // identical one bought the same month, so the fleet holds at 61,712 cards for
+    // the rest of the hold instead of emptying out. Without these the last tranche
+    // retires in year 9 and year 10 earns nothing while still being averaged into
+    // the returns. Replacements are funded from operating cash, not new debt —
+    // a fresh facility drawn in year 7 could not amortise inside the hold.
+    {k:'2031 H2', m:72,  g:1024,  r:1}, {k:'2032 H1', m:78,  g:2048,  r:1},
+    {k:'2032 H2', m:84,  g:2024,  r:1}, {k:'2033 H1', m:90,  g:5144,  r:1},
+    {k:'2033 H2', m:96,  g:10240, r:1}, {k:'2034 H1', m:102, g:10240, r:1},
+    {k:'2034 H2', m:108, g:30992, r:1}],
   coloMW:2, coloRate:220, coloLeaseYears:10, coloEsc:0.025,
   rentalDecline:0.12, utilStart:1.0, utilSteady:1.0, utilRamp:6,
   utilWS:1.0, utilOD:0.90, // sold-through by channel: contract is take-or-pay, on-demand runs at 90%
@@ -572,7 +582,7 @@ const F_REV=[
 const F_COST=[
   {section:'CAPEX &amp; residual value'},
   {k:'psPerGpu',gpuOnly:true,label:'Deployment / professional fees',unit:'$ / GPU',step:100,info:'One-time professional services to stand up the GPU fleet — cluster design, integration, fabric bring-up, commissioning. Quoted per card: $4,687.50 is the $2.4M-per-512-GPU pod rate divided down, so it scales with any fleet size. Capitalised when the kit lands and depreciated over the life of the servers it commissions.'},
-  {k:'gpuLifeYears',gpuOnly:true,label:'GPU holding period',unit:'yrs before sale',step:1,info:'How long each tranche runs before it is sold at its resale value. Tranches are bought on the build roadmap and retired on this clock, so the fleet peaks when the last tranche lands and winds down from there — the roadmap is the purchase schedule, and nothing is bought to replace what leaves.'},
+  {k:'gpuLifeYears',gpuOnly:true,label:'GPU holding period',unit:'yrs before sale',step:1,info:'How long each tranche runs before it is sold at its resale value. Tranches are bought on the build roadmap and retired on this clock. Rows flagged as replacements re-buy each cohort the month it retires, so the fleet holds flat for the rest of the hold rather than winding down; replacements are funded from operating cash, not from the construction facility.'},
   {k:'residualPct',gpuOnly:true,label:'GPU / server resale value',unit:'% at exit',step:1,pct:true,info:'GPU server resale value at exit, as % of purchase price. Secondary-market data puts a 2-year-old H100 near 61% of original and a 3-year-old at 45-60%, with used A100s spanning 60-80%; CoreWeave has re-booked 2022 H100s at 95% of original contract pricing. A figure at the top of that range is a scarcity call, not a depreciation curve — it assumes the compute shortage outlasts the hold.'},
   {k:'netResidualPct',gpuOnly:true,label:'Network resale value',unit:'% at exit',step:1,pct:true,info:'Resale value of switches, optics and cabling at exit, as % of purchase price. Zero here: the fabric is written off over the hold rather than assumed to resell, which is the conservative call next to the GPUs it serves.'},
   {section:'OPEX — recurring'},
@@ -648,7 +658,13 @@ function compute(p,tog){
   // Each tranche is bought on its roadmap month, runs for the GPU life, then is sold at
   // its residual. Installed capex only ever grows; the fleet in service does not.
   const lifeM=groad?Math.max(1,Math.round((p.gpuLifeYears||5)*12)):0;
-  const trs=groad?groad.map(r=>({m:Math.max(1,Math.round(r.m||1)), n:Math.max(0,r.g||0)/Math.max(1,gpus)})):[];
+  const trs=groad?groad.map(r=>({m:Math.max(1,Math.round(r.m||1)), n:Math.max(0,r.g||0)/Math.max(1,gpus), r:!!r.r})):[];
+  // `target` is the fleet standing at any one time; `purchSrv` is every node ever
+  // bought. Refreshes make these diverge, and conflating them either caps the
+  // replacement purchases away or doubles the reported fleet.
+  const purchSrv=groad?trs.reduce((t,x)=>t+x.n,0):target;
+  const initSrv=groad?trs.filter(x=>!x.r).reduce((t,x)=>t+x.n,0):target;
+  const lastInitM=groad?Math.max(...trs.filter(x=>!x.r).map(x=>x.m)):0;
   const srvCost=p.serverPrice, netCost=p.serverPrice*p.netPct;
   const roadMW=road?road.reduce((t,r)=>t+Math.max(0,r.mw||0),0):0;
   const shellTot=road?facTotal*Math.max(0,Math.min(1,p.shellPct||0)):0;
@@ -660,9 +676,13 @@ function compute(p,tog){
   const build=A(),online=A(),capexS=A(),capexN=A(),capexF=A(),capex=A(),cumS=A(),cumN=A(),cumF=A(),util=A(),price=A(),bill=A(),rev=A(),revG=A(),revGm=A(),revC=A(),
         elec=A(),warr=A(),oth=A(),othF=A(),intR=A(),ga=A(),rentx=A(),trans=A(),ar=A(),dwc=A(),feeA=A(),cashopex=A(),deprS=A(),deprN=A(),deprF=A(),depr=A(),ebitda=A(),ebit=A(),
         liveSrv=A(),retSrv=A(),resale=A(),intCap=A(),intPaid=A(),capexP=A(),deprP=A(),dDraw=A(),dRepay=A(),dInt=A(),dBal=A(),pbt=A(),tax=A(),ni=A(),cfo=A(),capexCf=A(),projFcf=A(),eqFcf=A(),cumEq=A();
-  const totalCapex=(useGpu?target*p.serverPrice*(1+p.netPct):0)+facTotal+psTotal;
-  const netCapex=useGpu?target*p.serverPrice*p.netPct:0;
-  const totalDebt=totalCapex*debtPct;
+  const totalCapex=(useGpu?purchSrv*p.serverPrice*(1+p.netPct):0)+facTotal+psTotal;
+  const netCapex=useGpu?purchSrv*p.serverPrice*p.netPct:0;
+  // Lenders underwrite the asset they financed. Replacement kit bought in year 7
+  // out of operating cash never enters the facility, so sizing the loan off total
+  // lifetime spend would gear the project against capex it never lent against.
+  const initCapex=(useGpu?initSrv*p.serverPrice*(1+p.netPct):0)+facTotal+psTotal;
+  const totalDebt=initCapex*debtPct;
   // Capitalised construction interest means the balance at conversion is larger than
   // the original commitment, so amortising the commitment leaves a stub outstanding.
   // The term loan amortises whatever converts.
@@ -675,7 +695,7 @@ function compute(p,tog){
       build[m]=Math.min(target,cum); // roadmap tranches are MW IT
     } else if(groad){
       let cum=0; for(const r of groad) if(Math.round(r.m)<=m) cum+=Math.max(0,r.g||0);
-      build[m]=Math.min(target,cum/Math.max(1,gpus)); // tranches are GPUs; build is servers
+      build[m]=Math.min(purchSrv,cum/Math.max(1,gpus)); // tranches are GPUs; build is servers
     } else build[m]=Math.min(target, target*Math.min(m,deployM)/deployM);
     if(groad){
       let live=0,ret=0;
@@ -757,12 +777,13 @@ function compute(p,tog){
     depr[m]=deprS[m]+deprN[m]+deprF[m]+deprP[m];
     ebitda[m]=rev[m]-cashopex[m];
     ebit[m]=ebitda[m]-depr[m];
-    dDraw[m]=capex[m]*debtPct;
+    let refCapex=0; trs.forEach(t=>{ if(t.r&&t.m===m) refCapex+=t.n*(srvCost+netCost); });
+    dDraw[m]=Math.max(0,capex[m]-refCapex)*debtPct;
     // Construction facilities convert to term debt at completion, not at first
     // handover: amortising the whole loan while most of the build is still going in
     // charges full principal against a fraction of the revenue.
     const amortStart = road?Math.max(...road.map(r=>Math.round(r.m||1)))
-                     :(groad?Math.max(...groad.map(r=>Math.round(r.m||1))):deployM);
+                     :(groad?lastInitM:deployM);
     const repaying = m>amortStart && m<=amortStart+p.debtTenor;
     if(m===amortStart+1){convBal=dBal[m-1]; princPerMo=convBal/Math.max(1,p.debtTenor);}
     dRepay[m]=repaying?Math.min(princPerMo,dBal[m-1]+dDraw[m]):0;
@@ -886,7 +907,7 @@ function compute(p,tog){
 
   const peakEquity=Math.max(0,-Math.min(0,...cumEq.slice(1)));
 
-  return {N,useDebt,useFac,useGA,useWC,useExit,useExitCur,useColo,gpuMW,coloMW,roadMW,shellTot,fitTot,totalCapex,servCapex:useGpu?target*p.serverPrice:0,netCapex,facTotal,psTotal,mwIT,facExit,peakDebt,debtEnd,residual,servResidual,totalDebt,termProj,peakEquity,arEnd:ar[N],
+  return {N,useDebt,useFac,useGA,useWC,useExit,useExitCur,useColo,gpuMW,coloMW,roadMW,shellTot,fitTot,totalCapex,servCapex:useGpu?purchSrv*p.serverPrice:0,netCapex,facTotal,psTotal,mwIT,facExit,peakDebt,debtEnd,residual,servResidual,totalDebt,termProj,peakEquity,arEnd:ar[N],
     pIRR,eIRR,projNPV,eqNPV,moic,cashBack:inflow,minDSCR,minICR,totRev,totNI,totEb,
     paybackYears:payM==null?null:payM/12,
     cb,costBasis,margin,marginPct,avgEbMargin,rentMo,useGpu,useTaas,unitPrice,unitStr,
@@ -1577,7 +1598,7 @@ function roadSpec(){
     ? {rows:S.gpuRoadmap||[], key:'g',  unit:'GPUs', step:'128', label:'GPUs'}
     : {rows:S.roadmap||[],    key:'mw', unit:'MW IT', step:'1',  label:'MW'};
 }
-function roadTotal(){ const c=roadSpec(); return c.rows.reduce((t,r)=>t+Math.max(0,r[c.key]||0),0); }
+function roadTotal(){ const c=roadSpec(); return c.rows.filter(r=>!r.r).reduce((t,r)=>t+Math.max(0,r[c.key]||0),0); }
 function roadITMW(){ return (S.roadmap||[]).reduce((t,r)=>t+Math.max(0,r.mw||0),0); }
 function roadGrossMW(){ const u=Math.max(0.01,Math.min(1,S.usableIT||1)); return roadITMW()/u; }
 function syncRoadmap(){
@@ -1613,7 +1634,7 @@ function renderRoadmap(){
    above says what a MW is, this says when it arrives. */
 function roadChart(W){
   const spec=roadSpec(), key=spec.key;
-  const road=spec.rows.slice().sort((a,b)=>(a.m||0)-(b.m||0));
+  const road=spec.rows.filter(r=>!r.r).slice().sort((a,b)=>(a.m||0)-(b.m||0));
   if(!road.length)return '';
   const tot=road.reduce((t,r)=>t+Math.max(0,r[key]||0),0);
   if(tot<=0)return '';
@@ -1679,7 +1700,9 @@ function roadChart(W){
     ticks+=`<line x1="${x.toFixed(1)}" y1="${(H-padB).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(H-padB+4).toFixed(1)}" stroke="#ccd2db"/>`
          + `<text x="${x.toFixed(1)}" y="${H-14}" fill="${yearEnd?'#5a6270':'#8a929e'}" font-size="${narrow?9:10}" font-family="ui-monospace,monospace" text-anchor="middle">${labelAll?r.k:yr}</text>`;
     if(labelAll)ticks+=`<text x="${x.toFixed(1)}" y="${H-3}" fill="#8a929e" font-size="9" font-family="ui-monospace,monospace" text-anchor="middle">+${fmt(add)}</text>`;
-    if(!last||!labelAll){
+    // the final running total is already spelled out in the corner label, and on a
+    // phone the two land on top of each other
+    if(!last){
       const mid=(x+xNext)/2;
       ticks+=`<text x="${mid.toFixed(1)}" y="${(Y(cum)-8).toFixed(1)}" fill="${yearEnd?'#111318':'#5a6270'}" font-size="${narrow?9:10.5}" font-weight="${yearEnd?700:500}" font-family="ui-monospace,monospace" text-anchor="middle">${fmt(cum)}</text>`;
     }
@@ -1709,22 +1732,27 @@ function renderRoadChart(){
   bar.classList.remove('hidden');
   const spec=roadSpec();
   const tot=roadTotal();
-  const lastYr=spec.rows.length?String(spec.rows[spec.rows.length-1].k).slice(0,4):'';
+  const buildRows=spec.rows.filter(r=>!r.r);
+  const refRows=spec.rows.filter(r=>r.r);
+  const lastYr=buildRows.length?String(buildRows[buildRows.length-1].k).slice(0,4):'';
   const note=isGpuProd()
     ? `<b class="num" style="color:var(--ink)">${tot.toLocaleString()} GPUs</b> by ${lastYr} · `+
       `${Math.round(tot/Math.max(1,S.gpus)).toLocaleString()} nodes · `+
-      `${(tot/Math.max(1,S.gpus)*(S.powerKW+(S.netPowerKW||0))/1000).toFixed(1)} MW IT drawn from the hall`
+      `${(tot/Math.max(1,S.gpus)*(S.powerKW+(S.netPowerKW||0))/1000).toFixed(1)} MW IT drawn from the hall`+
+      (refRows.length?` · held flat to ${String(refRows[refRows.length-1].k).slice(0,4)} by ${refRows.length} replacement tranches`:'')
     : `<b class="num" style="color:var(--ink)">${tot} MW IT</b> by ${lastYr} · ${Math.round(roadGrossMW())} MW campus power at ${Math.round((S.usableIT||1)*100)}% usable · stacked by capacity type`;
   bar.innerHTML=`<div class="roadhead"><span class="mlabel">Build roadmap</span>`+
     `<span class="roadnote">${note}</span></div>`+
     roadChart(Math.max(260, Math.round(bar.clientWidth||1000)));
 }
 function roadFoot(){
-  const c=roadSpec(), last=c.rows.reduce((t,r)=>Math.max(t,r.m||0),0);
+  const c=roadSpec(), last=c.rows.filter(r=>!r.r).reduce((t,r)=>Math.max(t,r.m||0),0);
   if(isGpuProd()){
     const g=roadTotal(), nodes=Math.round(g/Math.max(1,S.gpus));
+    const ref=c.rows.filter(r=>r.r);
     return `${g.toLocaleString()} GPUs by month ${last} — ${nodes.toLocaleString()} nodes, `+
-      `${(nodes*(S.powerKW+(S.netPowerKW||0))/1000).toFixed(1)} MW IT. Month 1 = Jan 2026.`;
+      `${(nodes*(S.powerKW+(S.netPowerKW||0))/1000).toFixed(1)} MW IT. Month 1 = Jan 2026.`+
+      (ref.length?` Rows marked ↻ re-buy a cohort the month it retires at 5 years, holding the fleet flat rather than letting it wind down; they add capex and no capacity, and are funded from operating cash.`:'');
   }
   return `MW below is leasable IT load: ${roadITMW()} MW IT by month ${last}, `+
     `drawing ${Math.round(roadGrossMW())} MW of campus power. Month 1 = Jan 2026.`;
