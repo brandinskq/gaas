@@ -354,7 +354,7 @@
         <input type="range" id="serverPrice_r" min="100000" max="1200000" step="10000">
       </div>
       <div class="drv">
-        <div class="row"><label>Number of GPUs<span class="hint" id="srvNote">8-GPU HGX B300 nodes</span><span class="ttip" data-tip="Total GPU count, stepped in 1,024 (128 nodes × 8). Internally converted to whole servers. Drives capex, power and MW.">ⓘ</span></label>
+        <div class="row"><label>Number of GPUs<span class="hint" id="srvNote">8-GPU HGX B300 nodes</span><span class="ttip" id="gpuCountTip" data-tip="Total GPU count, set by the build roadmap and stepped in whole boxes. Drives capex, power and MW.">ⓘ</span></label>
           <div class="val"><input type="number" id="gpuCount" step="1024"><span class="unit">GPUs</span></div></div>
         <input type="range" id="gpuCount_r" min="1024" max="40960" step="1024">
       </div>
@@ -364,9 +364,9 @@
         <input type="range" id="netPct_r" min="0" max="25" step="1">
       </div>
       <div class="drv">
-        <div class="row"><label>GPU Power<span class="hint">HGX B300 node</span><span class="ttip" data-tip="IT power draw per 8-GPU node (GPUs + CPU/mem + in-node NICs). B300 8-GPU ≈ 11.2kW GPUs + 2-3kW CPU/mem/NIC = ~14kW. The external network fabric is the separate 'Network Power' field below. Together they drive electricity and facility MW sizing.">ⓘ</span></label>
+        <div class="row"><label>GPU Power<span class="hint" id="powerNote">B300 node</span><span class="ttip" id="gpuPowerTip" data-tip="IT power draw per box (GPUs, CPU/memory and in-box NICs). The external fabric is the separate Network Power field below; together they drive electricity and facility MW sizing.">ⓘ</span></label>
           <div class="val"><input type="number" id="powerKW" step="0.5"><span class="unit">kW</span></div></div>
-        <input type="range" id="powerKW_r" min="8" max="25" step="0.5">
+        <input type="range" id="powerKW_r" min="8" max="160" step="0.5">
       </div>
       <div class="drv">
         <div class="row"><label>Network Power<span class="hint">IB/Spectrum fabric · switches + optics</span><span class="ttip" data-tip="External network fabric power per node — leaf/spine InfiniBand/Spectrum switches + optics, outside the 8-GPU node. ≈10% of GPU power for rail-optimized 800G clusters. Added on top of GPU Power for electricity and facility MW sizing.">ⓘ</span></label>
@@ -597,8 +597,8 @@ const DC_GRADE_LIST=[
 
 const F_REV=[
   {k:'gpus',gpuOnly:true,label:'GPUs per server',unit:'#',step:1,info:'GPUs per node. HGX/DGX B300 is 8. Sets GPU-count rounding and per-node power.'},
-  {k:'deployMonths',gpuOnly:true,label:'Deployment period',unit:'months',step:1,tog:'phase',info:'Months to install all GPUs (staged capex). Capacity comes online gradually, not day one.'},
-  {k:'leadMonths',gpuOnly:true,label:'Build lead time',unit:'months (capex→rev)',step:1,tog:'phase',info:'Commissioning gap between spending capex and earning revenue — money out, debt clock running, no income. The deepest part of the Year-1 cash hole.'},
+  {k:'deployMonths',gpuOnly:true,roadmapDead:true,label:'Deployment period',unit:'months',step:1,tog:'phase',info:'Months to install all GPUs (staged capex). Capacity comes online gradually, not day one.'},
+  {k:'leadMonths',gpuOnly:true,roadmapDead:true,label:'Build lead time',unit:'months (capex→rev)',step:1,tog:'phase',info:'Commissioning gap between spending capex and earning revenue — money out, debt clock running, no income. The deepest part of the Year-1 cash hole.'},
   {k:'lockYears',gpuOnly:true,label:'Contract lock period',unit:'years',step:1,tog:'lock',info:'Years the rental price is contractually fixed. The single most important bankability lever — locked revenue is what makes the debt serviceable.'},
   {k:'rentalDecline',gpuOnly:true,label:'Market erosion / yr',unit:'%',step:1,pct:true,tog:'decline',info:'Annual decline in market GPU-hour price as newer silicon ships. Applies after the lock period expires. H100 fell ~40%/yr post-peak.'},
   {k:'utilSteady',gpuOnly:true,derived:'blend',label:'Utilization — steady',unit:'%',step:1,pct:true,info:'Mature utilisation once ramped. 85% is strong for contracted capacity; hyperscalers assume 70-90%.'},
@@ -607,7 +607,7 @@ const F_REV=[
 ];
 const F_COST=[
   {section:'CAPEX &amp; residual value'},
-  {k:'psPerGpu',gpuOnly:true,label:'Deployment / professional fees',unit:'$ / GPU',step:100,info:'One-time professional services to stand up the GPU fleet — cluster design, integration, fabric bring-up, commissioning. Quoted per card: $4,687.50 is the $2.4M-per-512-GPU pod rate divided down, so it scales with any fleet size. Capitalised when the kit lands and depreciated over the life of the servers it commissions.'},
+  {k:'psPerGpu',gpuOnly:true,label:'Deployment / professional fees',unit:'$ / GPU',step:100,info:'One-time professional services to stand up the GPU fleet — cluster design, integration, fabric bring-up, commissioning. Quoted per card so it scales with any fleet size, and set per model: $4,687.50 for B300, from the $2.4M-per-512-GPU pod rate divided down, and $9,375 for GB300, since a 72-GPU NVLink rack is not commissioned like a node. Capitalised when the kit lands and depreciated over the life of the servers it commissions.'},
   {k:'gpuLifeYears',gpuOnly:true,label:'GPU holding period',unit:'yrs before sale',step:1,info:'How long each tranche runs before it is sold at its resale value. Tranches are bought on the build roadmap and retired on this clock. Rows flagged as replacements re-buy each cohort the month it retires, so the fleet holds flat for the rest of the hold rather than winding down; replacements are funded from operating cash, not from the construction facility.'},
   {k:'residualPct',gpuOnly:true,label:'GPU / server resale value',unit:'% at exit',step:1,pct:true,info:'GPU server resale value at exit, as % of purchase price. Secondary-market data puts a 2-year-old H100 near 61% of original and a 3-year-old at 45-60%, with used A100s spanning 60-80%; CoreWeave has re-booked 2022 H100s at 95% of original contract pricing. A figure at the top of that range is a scarcity call, not a depreciation curve — it assumes the compute shortage outlasts the hold.'},
   {k:'netResidualPct',gpuOnly:true,label:'Network resale value',unit:'% at exit',step:1,pct:true,info:'Resale value of switches, optics and cabling at exit, as % of purchase price. Zero here: the fabric is written off over the hold rather than assumed to resell, which is the conservative call next to the GPUs it serves.'},
@@ -1397,7 +1397,19 @@ function render(){
     Monthly engine over ${o.N} months. ${o.useGpu?`Two capital layers: servers depreciate to ${(S.residualPct*100).toFixed(0)}% residual over the hold; facility over ${S.facilityLife} yrs, exiting at net book value.`:`The facility depreciates over ${S.facilityLife} yrs and exits at net book value; capacity arrives on the build roadmap, with the shell built once for the whole site and fit-out following each tranche.`} One-time development &amp; professional fees (land, business case, design, development management) are capitalised at kick-off and depreciated over the same facility life; they are excluded from the O&amp;M base. ${o.useWC?`Working capital holds ${S.arDays} days of revenue in receivables${o.useExit?'':' (released at liquidation exit)'}. `:''}${T.debt?`Debt drawn pro-rata with capex, equal-principal amortization from ${o.useGpu?'the end of the install ramp':'first capacity handover'}; ${(S.feePct*100).toFixed(2)}% arrangement fee expensed at kick-off. `:''}Exit: ${o.useExit?`going-concern at ${S.exitMult}x LTM EBITDA (buyer assumes working capital)`:(o.useGpu?'liquidation — hardware residual + facility NBV':'liquidation — facility net book value')}. Equity IRR is levered FCFE net of exit debt. Sensitivity and scenario cells rerun the full engine. Decision tool, not investment advice.
   </div>`;
   document.getElementById('rentNote').textContent='start · ≈'+money(o.rentMo)+'/GPU/mo';
-  document.getElementById('srvNote').textContent=S.servers.toLocaleString()+' × 8-GPU nodes · '+o.gpuMW.toFixed(2)+' MW IT';
+  (()=>{const m=GPU_MODELS.find(x=>x.id===GPU)||{gpus:S.gpus,unit:'node'};
+    // hardcoded "8-GPU nodes" turned 857 GB300 racks into 6,856 cards on screen
+    document.getElementById('srvNote').textContent=
+      S.servers.toLocaleString()+' × '+m.gpus+'-GPU '+(m.unit==='rack'?'racks':'nodes')+' · '+o.gpuMW.toFixed(2)+' MW IT';
+    const pn=document.getElementById('powerNote');
+    if(pn)pn.textContent=m.name+' '+(m.unit==='rack'?'rack':'node');
+    const gt=document.getElementById('gpuCountTip');
+    if(gt)gt.dataset.tip='Total GPU count, set by the build roadmap and stepped in whole '
+      +(m.unit==='rack'?'racks':'nodes')+' of '+m.gpus+' cards. Drives capex, power and MW.';
+    const pt=document.getElementById('gpuPowerTip');
+    if(pt)pt.dataset.tip='IT power draw per '+m.gpus+'-GPU '+(m.unit==='rack'?'rack':'node')
+      +' (GPUs, CPU/memory and in-box NICs). '+m.name+' draws ~'+m.power+'kW. The external fabric is the separate '
+      +'Network Power field below; together they drive electricity and facility MW sizing.';})();
 }
 function plRow(label,arr,bold){
   const tot=arr.reduce((s,v)=>s+v,0);
@@ -1442,6 +1454,12 @@ function buildGroup(id,fields){
   const b=document.getElementById(id);
   const _isGpu=(PRODUCTS.find(p=>p.id===PROD)||{}).gpu!==false;
   fields=fields.filter(f=>!((f.gpuOnly||f.coreInPropco)&&!_isGpu)&&!(f.propcoOnly&&_isGpu));
+  // A GPU roadmap states when every tranche lands, which leaves nothing for the install
+  // ramp to say: build[m] reads the roadmap and lead is forced to 0 whenever one exists.
+  // Filtered here rather than hidden in the DOM — syncInputs rebuilds these panels, so a
+  // display:none set anywhere else is wiped on the next keystroke.
+  const _hasGpuRoad=_isGpu&&Array.isArray(S.gpuRoadmap)&&S.gpuRoadmap.length>0;
+  fields=fields.filter(f=>!(f.roadmapDead&&_hasGpuRoad));
   const txt=f=>({lab:(!_isGpu&&f.labelPropco)||f.label, inf:(!_isGpu&&f.infoPropco)||f.info});
   const lbl=f=>{const t=txt(f);return `<span class="flabel">${t.lab}${t.inf?`<span class="ttip" data-tip="${t.inf.replace(/"/g,'&quot;')}">ⓘ</span>`:''}</span>`;};
   // a section header survives only if a visible field follows it
@@ -1620,7 +1638,7 @@ function setProduct(id){
   // Colo joins them: subletting needs a hall you own, and useColo gates on useFac, so on
   // a business that rents its hall the switch could never do anything. A control that
   // does nothing when clicked reads as a broken page.
-  ['exit','exitcur','util','colo'].forEach(k=>{
+  ['exit','exitcur','util','colo','phase'].forEach(k=>{
     const el=document.getElementById('tog_'+k); if(el)el.style.display='none';
   });
   syncToggles(); renderGpuRates();
