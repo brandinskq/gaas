@@ -854,7 +854,7 @@ function compute(p,tog){
     const cfads=eb-cashtax-dw, ds=intr+prin;
     yrs.push({y,rev:sum(rev),revG:sum(revG),revC:sum(revC),othF:sum(othF),intR:sum(intR),trans:sum(trans),elec:sum(elec),warr:sum(warr),oth:sum(oth),ga:sum(ga),rent:rn,dwc:dw,fee:fe,ebitda:eb,
       depr:sum(depr),ebit:sum(ebit),interest:intr,tax:cashtax,ni:sum(ni),
-      capex:-sum(capexCf),draw:sum(dDraw),repay:prin,fcfe:sum(eqFcf),
+      capex:-sum(capexCf),draw:sum(dDraw),repay:prin,fcfe:sum(eqFcf),resale:sum(resale),
       debtEnd:dBal[b],dscr:ds>1?cfads/ds:null,icr:intr>1?eb/intr:null,
       nde:eb!==0?dBal[b]/eb:null, price:price[b], util:util[b], online:online[b]});
   }
@@ -1309,10 +1309,10 @@ function render(){
       ${T.debt?plRow('Debt drawdown',o.yrs.map(y=>y.draw)):''}
       ${T.debt?plRow('Principal repayments',o.yrs.map(y=>-y.repay)):''}
       ${plRow('Free cash flow to equity',o.yrs.map(y=>y.fcfe),true)}
-      ${plRow(o.useGpu?'Hardware resale + WC':'Facility residual + WC',o.yrs.map((y,i)=>i===o.yrs.length-1?o.termProj:0))}
+      ${plRow(o.useGpu?'Hardware resale + WC':'Facility residual + WC',o.yrs.map((y,i)=>(y.resale||0)+(i===o.yrs.length-1?o.termProj:0)))}
       <tr><td style="color:var(--dim)">Cumulative equity cash</td>${cums.map(v=>`<td style="color:${v<0?'var(--fail)':'var(--dim)'}">${money(v)}</td>`).join('')}<td style="color:var(--dim)">—</td></tr>
     </tbody></table>
-    <div class="foot">Terminal ${money(o.termProj)} (${o.useGpu?'hardware resale':'facility net book value'} + working-capital release) lands in month ${o.N} — shown in the final-year row, folded into cumulative, and already in the IRR. Cumulative trough ≈ the peak equity need shown above.</div>
+    <div class="foot">${(()=>{const mid=o.yrs.reduce((t,y)=>t+(y.resale||0),0);return mid>1?`Cohorts reaching ${S.gpuLifeYears} years are sold during the hold, not at the end: ${money(mid)} across the years shown, on top of the `:'Terminal ';})()}${money(o.termProj)} terminal (${o.useGpu?'hardware still held':'facility net book value'} + working-capital release) landing in month ${o.N}. Both are in cumulative and in the IRR; neither counts toward DSCR, which is served by EBITDA alone. Cumulative trough &asymp; the peak equity need shown above.</div>
   </div>`;})()}
 
   ${o.useFac&&o.useGpu?(()=>{
