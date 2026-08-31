@@ -1617,7 +1617,10 @@ function setProduct(id){
   // and three with nothing to switch here: the fleet is held to disposal so there is
   // no exit multiple, it sells on contract so there is nothing to re-contract, and
   // sold-through is derived from the channel mix rather than ramped
-  ['exit','exitcur','util'].forEach(k=>{
+  // Colo joins them: subletting needs a hall you own, and useColo gates on useFac, so on
+  // a business that rents its hall the switch could never do anything. A control that
+  // does nothing when clicked reads as a broken page.
+  ['exit','exitcur','util','colo'].forEach(k=>{
     const el=document.getElementById('tog_'+k); if(el)el.style.display='none';
   });
   syncToggles(); renderGpuRates();
