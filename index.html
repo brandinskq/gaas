@@ -468,7 +468,8 @@ const DEF={
   rentalDecline:0.12, utilStart:1.0, utilSteady:1.0, utilRamp:6,
   utilWS:1.0, utilOD:0.90, // sold-through by channel: contract is take-or-pay, on-demand runs at 90%
   powerKW:14, netPowerKW:1.4, pue:1.20, warrantyPct:0.05, warrantyInclYears:5, otherPct:0.035, residualPct:0.80, netResidualPct:0, tax:0.15, saudiPct:1.00, occupancy:0.90, rackKW:0,
-  gaPct:0.12, gaInfl:0.03, omPerMWYr:1500000, renewUplift:0.10,
+  gaPct:0.05, gaInfl:0.03, omPerMWYr:1500000, renewUplift:0.10,
+  platPerGpu:4500, platShare:0.50, platFixed:22000000, // NVIDIA AI Enterprise list, on the managed half; own team flat
   facilityPerMW:12000000, facilityLife:25, psPerMW:424000, psPerGpu:4687.5, shellPct:0.25, usableIT:0.80, // psPerGpu = $2.4M per 512-GPU pod, expressed per card
   // IDC build roadmap — MW handed over, and the project month each tranche goes live.
   // Month 1 = Jan 2026, so month 12 = end of 2026 and the 2027 quarters land on 15/18/21/24.
@@ -592,7 +593,10 @@ const F_COST=[
   {k:'warrantyInclYears',gpuOnly:true,label:'Warranty included in price',unit:'yrs',step:1,info:'Years of OEM warranty bundled in the node purchase price — no separate support charge during this window, counted from each tranche&#39;s own delivery. Blackwell-generation systems ship with 5yr where the H100 generation shipped with 3yr; at a 5-year holding period that covers the kit for its whole life, and matters again at resale because cover still running is worth a premium in the secondary market. If the vendor charges for the extension, add it to the node price rather than here.'},
   {k:'otherPct',gpuOnly:true,label:'IDC O&M',unit:'% capex/yr',step:0.5,pct:true,info:'IDC operations & maintenance — on-site engineers, NOC, facility O&M and M&E maintenance, as % of total capex per year, escalating at the O&M inflation rate.'},
   {k:'omPerMWYr',propcoOnly:true,label:'IDC O&M',unit:'$M / MW IT / yr',step:0.1,scale:1e6,info:'All-in operating cost per MW of IT capacity under management: on-site engineers, NOC, M&E maintenance, security, insurance — and, on this product, ground rent and corporate overhead too, which is why those two lines are zeroed rather than charged again. Escalates at the O&M inflation rate. Excludes electricity: the end user meters and pays power directly.'},
-  {k:'gaPct',gpuOnly:true,label:'Company opex + platform',unit:'% of revenue',step:1,pct:true,tog:'ga',info:'Corporate overhead — management, sales, admin, finance — plus the software platform: orchestration, inference serving, billing, R&amp;D. Site engineers, NOC and M&amp;E maintenance are not here; they sit in IDC O&amp;M. Neoclouds run leaner on an open-source stack than managed hyperscaler platforms.'},
+  {k:'platPerGpu',gpuOnly:true,label:'Platform licence',unit:'$ / GPU / yr',step:250,info:'Per-GPU software licence for the managed tier. NVIDIA AI Enterprise lists at $4,500/GPU/yr self-managed for one year, falling to roughly $3,600 on a five-year prepay, and bundles the Run:ai orchestrator NVIDIA acquired in 2024 along with NIM microservices and support. Charged only on the share below. Orchestration-only platforms (Rafay, Ori) quote a platform fee plus a per-GPU rate and are not publicly priced — get a quote before assuming this figure.'},
+  {k:'platShare',gpuOnly:true,label:'Fleet on the managed tier',unit:'% of GPUs',step:5,pct:true,info:'Share of the live fleet carrying the platform licence. Wholesale clusters ship as bare metal and the customer brings its own licences, so only the managed and inference tier pays. At 70% wholesale the strict answer is 30%; 50% carries a margin for wholesale customers who buy the managed stack anyway.'},
+  {k:'platFixed',gpuOnly:true,label:'Platform engineering',unit:'$M / yr',step:1,scale:1e6,info:'The team the licence does not buy: metering and billing, self-service portal, tenancy, API, onboarding, 24/7 platform SRE. Sized bottom-up at roughly 90-140 people fully loaded — CoreWeave carried about 1,000 engineers against $5.1bn of revenue and Nebius over 500, but both build multi-region product estates rather than one region. Fixed: it does not shrink because half the customers take raw nodes. Escalates with salary inflation.'},
+  {k:'gaPct',gpuOnly:true,label:'Corporate G&A',unit:'% of revenue',step:1,pct:true,tog:'ga',info:'Management, sales, finance, legal, admin — corporate only. Platform and licences now sit on their own lines above, and site engineers, NOC and M&amp;E maintenance sit in IDC O&amp;M. CoreWeave ran sales and marketing near 2% of revenue in 2025 with G&amp;A closer to 16%, though that figure carries heavy post-IPO stock compensation; 5% suits an operator selling mostly wholesale to a handful of counterparties rather than running demand generation.'},
   {k:'gaInfl',label:'O&M / salary inflation',unit:'% / yr',step:0.5,pct:true,info:'Annual growth in the O&M line, driven mainly by salary escalation. Saudi CPI ran 2.03% in 2025 and 1.8-1.9% through 2026; site engineers, NOC and security cost more than headline CPI in a market building out this fast, so 3% carries a point of wage premium. Watch it against the lease escalator: the gap between the two compounds against the margin over a 20-year hold.'},
   {section:'Tax'},
   {k:'saudiPct',label:'Saudi / GCC ownership',unit:'%',step:5,pct:true,info:'Share of equity held by Saudi/GCC owners. Effective tax = ownership × 2.5% (Zakat) + (1−ownership) × 20% (foreign CIT). Zakat is technically levied on the Zakat base (net worth), approximated here on profit. 100% Saudi ⇒ 2.5% effective; 0% ⇒ 20%.'},
@@ -675,7 +679,7 @@ function compute(p,tog){
 
   const A=()=>new Array(N+1).fill(0);
   const build=A(),online=A(),capexS=A(),capexN=A(),capexF=A(),capex=A(),cumS=A(),cumN=A(),cumF=A(),util=A(),price=A(),bill=A(),rev=A(),revG=A(),revGm=A(),revC=A(),
-        elec=A(),warr=A(),oth=A(),othF=A(),intR=A(),ga=A(),rentx=A(),trans=A(),ar=A(),dwc=A(),feeA=A(),cashopex=A(),deprS=A(),deprN=A(),deprF=A(),depr=A(),ebitda=A(),ebit=A(),
+        elec=A(),warr=A(),oth=A(),othF=A(),intR=A(),ga=A(),plat=A(),rentx=A(),trans=A(),ar=A(),dwc=A(),feeA=A(),cashopex=A(),deprS=A(),deprN=A(),deprF=A(),depr=A(),ebitda=A(),ebit=A(),
         liveSrv=A(),retSrv=A(),resale=A(),intCap=A(),intPaid=A(),capexP=A(),deprP=A(),dDraw=A(),dRepay=A(),dInt=A(),dBal=A(),pbt=A(),tax=A(),ni=A(),cfo=A(),capexCf=A(),projFcf=A(),eqFcf=A(),cumEq=A();
   const totalCapex=(useGpu?purchSrv*p.serverPrice*(1+p.netPct):0)+facTotal+psTotal;
   const netCapex=useGpu?purchSrv*p.serverPrice*p.netPct:0;
@@ -755,10 +759,17 @@ function compute(p,tog){
                  :build[m]*(p.omPerMWYr||0)/12*omInfl;
     othF[m]=useGpu?cumF[m]*p.otherPct/12*omInfl:oth[m];
     intR[m]=useFac?gpuMW*1000*p.coloRate*(online[m]/target)*Math.pow(1+p.coloEsc,Math.floor((m-1)/12)):0;
-    ga[m]=useGA?rev[m]*p.gaPct:0; // company opex + platform, scales with revenue
+    ga[m]=useGA?rev[m]*p.gaPct:0; // corporate only — management, sales, finance, legal
+    // Wholesale clusters are handed over as bare metal and bring their own licences;
+    // only the managed half needs the orchestration and inference stack, so the
+    // per-GPU fee is charged on that share of the fleet actually running. The team
+    // that builds billing, the portal and the API is a fixed cost either way — it
+    // does not get cheaper because half the customers take raw nodes.
+    plat[m]=useGpu?((online[m]*gpus*Math.max(0,Math.min(1,p.platShare||0))*(p.platPerGpu||0)/12)
+                    +(p.platFixed||0)/12)*omInfl:0;
     rentx[m]=useFac?(mwIT*p.siteRentPerMW/12):(online[m]*pkEff*p.coloPerKWMo);
     trans[m]=online[m]>0?p.transitMo:0;
-    cashopex[m]=elec[m]+warr[m]+oth[m]+ga[m]+rentx[m]+trans[m];
+    cashopex[m]=elec[m]+warr[m]+oth[m]+ga[m]+plat[m]+rentx[m]+trans[m];
     ar[m]=useWC?rev[m]*p.arDays/30.4:0;
     dwc[m]=ar[m]-ar[m-1];
     if(groad){
@@ -852,8 +863,9 @@ function compute(p,tog){
   for(let y=1;y<=p.years;y++){
     const a=(y-1)*12+1,b=y*12; const sum=arr=>{let s=0;for(let m=a;m<=b;m++)s+=arr[m];return s;};
     const eb=sum(ebitda),intr=sum(intPaid),prin=sum(dRepay),cashtax=sum(tax),dw=sum(dwc),fe=sum(feeA),rn=sum(rentx);
+    const pl=sum(plat);
     const cfads=eb-cashtax-dw, ds=intr+prin;
-    yrs.push({y,rev:sum(rev),revG:sum(revG),revC:sum(revC),othF:sum(othF),intR:sum(intR),trans:sum(trans),elec:sum(elec),warr:sum(warr),oth:sum(oth),ga:sum(ga),rent:rn,dwc:dw,fee:fe,ebitda:eb,
+    yrs.push({y,rev:sum(rev),revG:sum(revG),revC:sum(revC),othF:sum(othF),intR:sum(intR),trans:sum(trans),elec:sum(elec),warr:sum(warr),oth:sum(oth),ga:sum(ga),plat:pl,rent:rn,dwc:dw,fee:fe,ebitda:eb,
       depr:sum(depr),ebit:sum(ebit),interest:intr,tax:cashtax,ni:sum(ni),
       capex:-sum(capexCf),draw:sum(dDraw),repay:prin,fcfe:sum(eqFcf),resale:sum(resale),
       debtEnd:dBal[b],dscr:ds>1?cfads/ds:null,icr:intr>1?eb/intr:null,
@@ -884,8 +896,10 @@ function compute(p,tog){
             warr:(()=>{const L=p.gpuLifeYears||p.years;
               return p.serverPrice*(1+p.netPct)*p.warrantyPct/12/ssBill*Math.max(0,(L-(p.warrantyInclYears||0))/L);})(),
             oth:(p.serverPrice*(1+p.netPct)+facGpuPerServer)*p.otherPct/12/ssBill,
+            plat:useGpu?((gpus*Math.max(0,Math.min(1,p.platShare||0))*(p.platPerGpu||0)/12)
+                         +(p.platFixed||0)/12/Math.max(1,target))/ssBill:0,
             ga:useGA?p.gaPct*baseRental:0};
-    costBasis=cb.depr+cb.net+cb.facility+cb.dev+cb.rent+cb.elec+cb.netpower+cb.warr+cb.oth+cb.ga;
+    costBasis=cb.depr+cb.net+cb.facility+cb.dev+cb.rent+cb.elec+cb.netpower+cb.warr+cb.oth+cb.plat+cb.ga;
     unitPrice=baseRental; unitStr='/GPU-hr'; rentMo=baseRental*H*p.utilSteady;
     // TaaS keeps $/GPU-hr unit economics — the common denominator across mixed token/image/second billing units
   } else {
@@ -924,7 +938,7 @@ const irrf=v=>v==null?'n/a':(v*100).toFixed(0)+'%';
 const yrf=v=>v==null?'—':v.toFixed(2)+' yr';
 
 /* ═══════════════ charts (SVG) ═══════════════ */
-const CC={depr:'#a5d600',net:'#7fae0a',warr:'#5f7d00',facility:'#4aa8d8',rent:'#3d7ea3',elec:'#2e5f7d',netpower:'#4a7d99',oth:'#7c8492',ga:'#9061f9',dev:'#7fb8d4',profit:'#a5d600',loss:'#d92d3f'};
+const CC={depr:'#a5d600',net:'#7fae0a',warr:'#5f7d00',facility:'#4aa8d8',rent:'#3d7ea3',elec:'#2e5f7d',netpower:'#4a7d99',oth:'#7c8492',plat:'#6b3fd4',ga:'#9061f9',dev:'#7fb8d4',profit:'#a5d600',loss:'#d92d3f'};
 const MODE_CC={txt:'#a5d600',aud:'#4aa8d8',img:'#9061f9',vid:'#e07a1f'};
 function modalitySplit(){ // TaaS: capacity-mix vs revenue-share bars + legend
   const modes=S.modes||[]; const mixSum=modes.reduce((s,m)=>s+m.mix,0)||1;
@@ -975,6 +989,7 @@ function dollarTable(o){
     // the fleet's deployment fee exists whether or not the hall is owned
     rows.push(['Development fees',o.cb.dev,CC.dev]);
     rows.push([o.useFac?'Ground rent':'Colo fee',o.cb.rent,CC.rent],['Electricity',o.cb.elec,CC.elec],['Network power',o.cb.netpower,CC.netpower],['IDC O&amp;M',o.cb.oth,CC.oth]);
+    if(o.cb.plat>0)rows.push(['Platform &amp; licences',o.cb.plat,CC.plat]);
     if(o.useGA)rows.push(['Corporate G&amp;A',o.cb.ga,CC.ga]);
   }else{
     rows.push(['Facility depreciation',o.cb.depr,CC.depr],['Development fees',o.cb.dev,CC.dev],['Ground rent',o.cb.rent,CC.rent],['IDC O&amp;M',o.cb.oth,CC.oth]);
@@ -1286,6 +1301,7 @@ function render(){
       ${o.yrs.some(y=>y.trans>0)?plRow('Network transit',o.yrs.map(y=>-y.trans)):''}
       ${plRow('IDC O&M',o.yrs.map(y=>-y.oth))}
       ${o.yrs.some(y=>y.rent>0)?plRow(o.useFac?'Site ground rent':'Colocation fees',o.yrs.map(y=>-y.rent)):''}
+      ${o.yrs.some(y=>y.plat>0)?plRow('Platform & licences',o.yrs.map(y=>-y.plat)):''}
       ${o.useGA&&o.yrs.some(y=>y.ga>0)?plRow('Corporate G&A',o.yrs.map(y=>-y.ga)):''}
       ${plRow('EBITDA',o.yrs.map(y=>y.ebitda),true)}
       ${plRow('Depreciation',o.yrs.map(y=>-y.depr))}
