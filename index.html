@@ -447,7 +447,7 @@ const DEF={
   serverPrice:790000, elec:0.047, rental:7.76, years:10, gpuLifeYears:5, netPct:0.12, transitMo:0,
   wsShare:0.70, // GPU sales mix: 70% wholesale/contract, 30% on-demand — blends the rental
 
-  servers:256, gpus:8, deployMonths:3, leadMonths:2, lockYears:9, // contracts run the full hold: build to 2029, then five more years
+  servers:256, gpus:8, deployMonths:3, leadMonths:2, lockYears:10, // contracts run the full hold: build to 2029, then five more years
   // GPUs handed over per tranche; servers is derived from the total. Month 1 = Jan 2026.
   gpuRoadmap:[
     {k:'2026',    m:12, g:1024},
@@ -599,7 +599,7 @@ const F_REV=[
   {k:'gpus',gpuOnly:true,label:'GPUs per server',unit:'#',step:1,info:'GPUs per node. HGX/DGX B300 is 8. Sets GPU-count rounding and per-node power.'},
   {k:'deployMonths',gpuOnly:true,roadmapDead:true,label:'Deployment period',unit:'months',step:1,tog:'phase',info:'Months to install all GPUs (staged capex). Capacity comes online gradually, not day one.'},
   {k:'leadMonths',gpuOnly:true,roadmapDead:true,label:'Build lead time',unit:'months (capex→rev)',step:1,tog:'phase',info:'Commissioning gap between spending capex and earning revenue — money out, debt clock running, no income. The deepest part of the Year-1 cash hole.'},
-  {k:'lockYears',gpuOnly:true,label:'Contract lock period',unit:'years',step:1,tog:'lock',info:'Years the rental price is contractually fixed. The single most important bankability lever — locked revenue is what makes the debt serviceable.'},
+  {k:'lockYears',gpuOnly:true,label:'Contract lock period',unit:'years',step:1,tog:'lock',info:'Years the rental price is contractually fixed. The single most important bankability lever — locked revenue is what makes the debt serviceable. Set to the full hold: at 9 years against a 10-year hold the last year re-priced to a spot curve that had been eroding since 2026, dropping $8.37/GPU-hr to $2.36 and taking $875M of value with it — not a conservative assumption but a year of the plan left uncontracted.'},
   {k:'rentalDecline',gpuOnly:true,label:'Market erosion / yr',unit:'%',step:1,pct:true,tog:'decline',info:'Annual decline in market GPU-hour price as newer silicon ships. Applies after the lock period expires. H100 fell ~40%/yr post-peak.'},
   {k:'utilSteady',gpuOnly:true,derived:'blend',label:'Utilization — steady',unit:'%',step:1,pct:true,info:'Mature utilisation once ramped. 85% is strong for contracted capacity; hyperscalers assume 70-90%.'},
   {k:'arDays',label:'Receivable days (AR)',unit:'days',step:5,tog:'wc',info:'Days between billing and cash collection. Working-capital drag funded by equity until it unwinds.'},
@@ -1230,6 +1230,7 @@ function setCustomer(mode){
 }
 /* ═══════════════ render ═══════════════ */
 function render(){
+  syncToggles();          // the erosion control appears and disappears with the lock period
   const o=compute(S,T);
   const vr=VAT_RATES[CUST]||0;
   const kpi=(l,v,s,c)=>`<div class="kpi"><div class="l">${l}</div><div class="v" style="color:${c||'var(--ink)'}">${v}</div>${s?`<div class="s">${s}</div>`:''}</div>`;
@@ -1460,6 +1461,7 @@ function buildGroup(id,fields){
   // display:none set anywhere else is wiped on the next keystroke.
   const _hasGpuRoad=_isGpu&&Array.isArray(S.gpuRoadmap)&&S.gpuRoadmap.length>0;
   fields=fields.filter(f=>!(f.roadmapDead&&_hasGpuRoad));
+  fields=fields.filter(f=>!(f.k==='rentalDecline'&&typeof lockCoversHold==='function'&&lockCoversHold()));
   const txt=f=>({lab:(!_isGpu&&f.labelPropco)||f.label, inf:(!_isGpu&&f.infoPropco)||f.info});
   const lbl=f=>{const t=txt(f);return `<span class="flabel">${t.lab}${t.inf?`<span class="ttip" data-tip="${t.inf.replace(/"/g,'&quot;')}">ⓘ</span>`:''}</span>`;};
   // a section header survives only if a visible field follows it
@@ -1513,7 +1515,15 @@ function bindToggles(){
 /* push T back into the switches — a product preset changes T without touching them */
 function syncToggles(){
   TOG_UI.forEach(([id,key])=>{const c=document.getElementById(id); if(c)c.checked=!!T[key];});
+  // Price erosion only bites after the contract lock expires. When the lock runs the full
+  // hold there is no uncontracted year left for it to touch, so the switch and its rate
+  // would sit there doing nothing. Conditional rather than deleted: shorten the lock and
+  // both come back, because then the risk is real again.
+  const dead=lockCoversHold();
+  const el=document.getElementById('tog_decline');
+  if(el&&isGpuProd())el.style.display=dead?'none':'';
 }
+function lockCoversHold(){ return !!T.lock && (S.lockYears||0) >= (S.years||0); }
 /* Reset restored DEF and the product's switches, but never re-applied the product's
    value overrides or the capacity mix — so the hall silently fell back to DEF sizing
    while the mix bar still advertised its blend. Run the preset itself instead. */
