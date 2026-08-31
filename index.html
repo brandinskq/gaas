@@ -720,7 +720,15 @@ function compute(p,tog){
     rev[m]=revG[m]+revC[m];
     elec[m]=useGpu?online[m]*pkEff*p.pue*H*p.elec:0; // colo tenants meter their own power
     const liveCapex=groad?online[m]*(srvCost+netCost):(cumS[m]+cumN[m]);
-    warr[m]=(m>Math.round((p.warrantyInclYears||0)*12))?liveCapex*p.warrantyPct/12:0; // OEM warranty bundled in node price for the first warrantyInclYears
+    // The bundled window belongs to each tranche, counted from its own delivery. Running
+    // it off month zero of the model put the 2029 tranche out of warranty the day it
+    // landed, four years before its cover expires.
+    const wIncl=Math.round((p.warrantyInclYears||0)*12);
+    if(groad){
+      let wBase=0;
+      trs.forEach(t=>{ if(t.m<=m && m<t.m+lifeM && m>t.m+wIncl) wBase+=t.n*(srvCost+netCost); });
+      warr[m]=wBase*p.warrantyPct/12;
+    } else warr[m]=(m>wIncl)?liveCapex*p.warrantyPct/12:0;
     // A GPU fleet's O&M tracks the kit it owns, so a share of capex is the right base.
     // A landlord's tracks megawatts of plant under management — tying it to build cost
     // would make the site more expensive to run purely because it cost more to build.
