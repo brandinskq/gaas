@@ -403,7 +403,7 @@
         <input type="range" id="occupancy_r" min="40" max="100" step="5">
       </div>
       <div class="drv" id="drv_lease">
-        <div class="row"><label>Hall rent — from Obsidian Rack<span class="hint">rack + power capacity, excl. metered power</span><span class="ttip" data-tip="Rent paid per kW of IT capacity, excl. metered power: this business meters and pays its own electricity, billed separately below. Paid to Obsidian Rack, the AI DC SPV, at its colocation rate of $250/kW/mo — the intra-group transfer price for hall space. No facility capex, no depreciation: the hall is pure opex to this business.">ⓘ</span></label>
+        <div class="row"><label>AI DC rent — from Obsidian Rack<span class="hint">rack + power capacity, excl. metered power</span><span class="ttip" data-tip="Rent paid per kW of IT capacity, excl. metered power: this business meters and pays its own electricity, billed separately below. Paid to Obsidian Rack, the AI DC SPV, at its colocation rate of $250/kW/mo — the intra-group transfer price for hall space. No facility capex, no depreciation: the hall is pure opex to this business.">ⓘ</span></label>
           <div class="val"><input type="number" id="coloPerKWMo" step="10"><span class="unit">$ / kW / mo</span></div></div>
         <input type="range" id="coloPerKWMo_r" min="80" max="400" step="10">
       </div>
@@ -505,7 +505,7 @@ let S={...DEF, modes:DEF.modes.map(m=>({...m})), roadmap:DEF.roadmap.map(r=>({..
 // ws = wholesale/spot floor $/GPU-hr; od = on-demand retail $/GPU-hr (lowest of AWS/Azure/OCI).
 // Effective rental blends the two by the wholesale sales share (default 65% contract / 35% on-demand).
 const GPU_MODELS=[
-  {id:'b300',  name:'B300',        gpus:8,  power:14.0, cost:790000,  liquid:false, unit:'node', ws:4.40,  od:14.00, net:0.12},
+  {id:'b300',  name:'B300',        gpus:8,  power:14.0, cost:790000,  liquid:false, unit:'node', ws:5.06,  od:16.10, net:0.12},
   {id:'gb300', name:'GB300 NVL72', gpus:72, power:140,  cost:6300000, liquid:true,  unit:'rack', ws:10.50, od:16.00, net:0.03},
 ];
 const blendRental=(m,s)=>s*m.ws+(1-s)*m.od; // s = wholesale share (0..1)
