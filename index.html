@@ -697,6 +697,14 @@ function compute(p,tog){
   const initSrv=groad?trs.filter(x=>!x.r).reduce((t,x)=>t+x.n,0):target;
   const lastInitM=groad?Math.max(...trs.filter(x=>!x.r).map(x=>x.m)):0;
   const srvCost=p.serverPrice, netCost=p.serverPrice*p.netPct;
+  // Commissioning is bought per card, and the cards arrive on a roadmap. Charging the
+  // whole fee in month 1 paid to stand up 61,712 GPUs in a year that 1,024 of them
+  // landed. Each tranche now carries its own fee on its own delivery month, and
+  // amortises it over the life of the kit it commissioned. Replacement tranches are
+  // excluded: a refresh swaps nodes into a fabric that was commissioned once.
+  const feeTr=(useGpu&&groad)
+    ? trs.filter(t=>!t.r).map(t=>({m:t.m, amt:t.n*gpus*(p.psPerGpu||0)}))
+    : [];
   const roadMW=road?road.reduce((t,r)=>t+Math.max(0,r.mw||0),0):0;
   const shellTot=road?facTotal*Math.max(0,Math.min(1,p.shellPct||0)):0;
   const fitTot=road?facTotal-shellTot:0;
@@ -750,7 +758,9 @@ function compute(p,tog){
       });
       capexF[m]=f;
     } else capexF[m]=(build[m]-build[m-1])/Math.max(target,1)*facTotal;
-    capexP[m]=(m===1)?psTotal:0; // one-time, incurred at kick-off before construction
+    capexP[m]=((m===1)?psFac:0)
+              + (feeTr.length ? feeTr.reduce((t,f)=>t+(f.m===m?f.amt:0),0)
+                              : ((m===1)?psGpu:0)); // facility fees up front; fleet fees with the kit
     capex[m]=capexS[m]+capexN[m]+capexF[m]+capexP[m];
     cumS[m]=cumS[m-1]+capexS[m];
     cumN[m]=cumN[m-1]+capexN[m];
@@ -828,7 +838,10 @@ function compute(p,tog){
     // facility life, the fleet's over the hold. Gating both on useFac left a leased
     // deployment fee capitalised in cash and never charged to the P&L at all.
     const dPF=useFac?Math.min(psFac/(p.facilityLife*12), Math.max(0,psFac-accDeprP)):0; accDeprP+=dPF;
-    const dPG=useGpu?Math.min(psGpu/((p.gpuLifeYears||p.years)*12), Math.max(0,psGpu-accDeprPG)):0; accDeprPG+=dPG;
+    const feeLife=Math.max(1,Math.round((p.gpuLifeYears||p.years)*12));
+    const dPG=!useGpu?0:(feeTr.length
+      ? feeTr.reduce((t,f)=>t+((m>=f.m&&m<f.m+feeLife)?f.amt/feeLife:0),0)
+      : Math.min(psGpu/feeLife, Math.max(0,psGpu-accDeprPG))); accDeprPG+=dPG;
     deprP[m]=dPF+dPG;
     depr[m]=deprS[m]+deprN[m]+deprF[m]+deprP[m];
     ebitda[m]=rev[m]-cashopex[m];
@@ -911,7 +924,7 @@ function compute(p,tog){
     const cfads=eb-cashtax-dw, ds=intr+prin;
     yrs.push({y,rev:sum(rev),revG:sum(revG),revC:sum(revC),othF:sum(othF),intR:sum(intR),trans:sum(trans),elec:sum(elec),warr:sum(warr),oth:sum(oth),ga:sum(ga),lic:lc,plat:pl,rent:rn,dwc:dw,fee:fe,ebitda:eb,
       depr:sum(depr),deprP:sum(deprP),ebit:sum(ebit),interest:intr,tax:cashtax,ni:sum(ni),
-      capex:-sum(capexCf),draw:sum(dDraw),repay:prin,fcfe:sum(eqFcf),resale:sum(resale),
+      capex:-sum(capexCf),capexP:sum(capexP),draw:sum(dDraw),repay:prin,fcfe:sum(eqFcf),resale:sum(resale),
       debtEnd:dBal[b],dscr:ds>1?cfads/ds:null,icr:intr>1?eb/intr:null,
       nde:eb!==0?dBal[b]/eb:null, price:price[b], util:util[b], online:online[b]});
   }
@@ -1371,7 +1384,7 @@ function render(){
     <table><thead><tr><th>$</th>${o.yrs.map(y=>`<th>Y${y.y}</th>`).join('')}<th style="color:var(--power)">Total</th></tr></thead><tbody>
       ${plRow('Cash from operations',o.yrs.map(y=>y.ni+y.depr-y.dwc))}
       ${plRow('CAPEX',o.yrs.map(y=>-y.capex))}
-      ${o.psTotal>0?plRow('  — of which deployment fees',o.yrs.map((y,i)=>i===0?-o.psTotal:0)):''}
+      ${o.psTotal>0?plRow('  — of which deployment fees',o.yrs.map(y=>-(y.capexP||0))):''}
       ${T.debt?plRow('Debt drawdown',o.yrs.map(y=>y.draw)):''}
       ${T.debt?plRow('Principal repayments',o.yrs.map(y=>-y.repay)):''}
       ${plRow('Free cash flow to equity',o.yrs.map(y=>y.fcfe),true)}
