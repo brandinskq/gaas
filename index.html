@@ -467,7 +467,7 @@ const DEF={
   coloMW:2, coloRate:220, coloLeaseYears:10, coloEsc:0.025,
   rentalDecline:0.12, utilStart:1.0, utilSteady:1.0, utilRamp:6,
   utilWS:1.0, utilOD:0.90, // sold-through by channel: contract is take-or-pay, on-demand runs at 90%
-  powerKW:14, netPowerKW:1.4, pue:1.20, warrantyPct:0.05, warrantyInclYears:5, otherPct:0.055, omPerGpuYr:6083, residualPct:0.80, netResidualPct:0, tax:0.15, saudiPct:1.00, occupancy:0.90, rackKW:0,
+  powerKW:14, netPowerKW:1.4, pue:1.20, warrantyPct:0.05, warrantyPerGpuYr:5530, warrantyInclYears:5, otherPct:0.055, omPerGpuYr:6083, residualPct:0.80, netResidualPct:0, tax:0.15, saudiPct:1.00, occupancy:0.90, rackKW:0,
   gaPct:0.05, gaFloor:2500000, gaInfl:0.05, omPerMWYr:1500000, renewUplift:0.10,
   platPerGpu:3600, platShare:1.00, platFixed:22000000, platStartPct:0.30, // NVAIE 5yr prepay across the fleet; own team ramps to full
   facilityPerMW:12000000, facilityLife:25, psPerMW:424000, psPerGpu:4687.5, shellPct:0.25, usableIT:0.80, // psPerGpu = $2.4M per 512-GPU pod, expressed per card
@@ -613,7 +613,7 @@ const F_COST=[
   {k:'netResidualPct',gpuOnly:true,label:'Network resale value',unit:'% at exit',step:1,pct:true,info:'Resale value of switches, optics and cabling at exit, as % of purchase price. Zero here: the fabric is written off over the hold rather than assumed to resell, which is the conservative call next to the GPUs it serves.'},
   {section:'OPEX — recurring'},
   {k:'pue',gpuOnly:true,label:'PUE',unit:'x',step:0.05,info:'Power Usage Effectiveness — total facility power ÷ IT power. Air-cooled ~1.4-1.5; liquid-cooled ~1.2-1.3. Multiplies the electricity bill.'},
-  {k:'warrantyPct',gpuOnly:true,label:'Warranty & support',unit:'% capex/yr',step:0.5,pct:true,info:'OEM/vendor hardware support & spares, as % of server+network capex per year, charged only AFTER the bundled-warranty window below. 5% ≈ enterprise SLA; 3.5-4% self-maintenance.'},
+  {k:'warrantyPerGpuYr',gpuOnly:true,label:'Warranty &amp; support',unit:'$ / GPU / yr',step:250,info:'OEM hardware support and spares once the bundled cover below runs out, priced per card because that is what a support contract covers — on a capex basis the same card cost more to cover inside a pricier box. $5,530 is 5% of a B300 card&#39;s share of server and network capex, the enterprise SLA rate; self-maintenance runs 3.5-4%. Charged from each tranche&#39;s own delivery, so a 2029 tranche stays covered until 2034 rather than falling out of warranty on a model-wide clock. Not inflated: this is a vendor price list, not a payroll. At the settings below it never charges — cover runs the full life of the kit — and only bites if the bundled window is shortened.'},
   {k:'warrantyInclYears',gpuOnly:true,label:'Warranty included in price',unit:'yrs',step:1,info:'Years of OEM warranty bundled in the node purchase price — no separate support charge during this window, counted from each tranche&#39;s own delivery. Blackwell-generation systems ship with 5yr where the H100 generation shipped with 3yr; at a 5-year holding period that covers the kit for its whole life, and matters again at resale because cover still running is worth a premium in the secondary market. If the vendor charges for the extension, add it to the node price rather than here.'},
   {k:'omPerGpuYr',gpuOnly:true,label:'GPU &amp; Fabric O&amp;M',unit:'$ / GPU / yr',step:250,info:'Keeping the fleet and its fabric running: hardware break-fix labour and the RMA process, spares logistics, optics and cable replacement, cluster monitoring, firmware and node lifecycle, smart hands. Not the building — on-site engineers, NOC, M&amp;E and security belong to the landlord and are already bought with the hall rent, so charging them here would pay for them twice. Priced per card rather than as a share of capex, because that is what the work scales with: on a capex basis the same rack cost 26% more to run on GB300 than on B300 for no extra effort, and a NVIDIA price rise would have raised the wage bill. $6,083 is deliberately generous against a bottom-up build of $500-1,000, with warranty covering every part for the full five-year life. Flat per card: a card costs the same in its first month as its last, so the early years only look cheaper because the fleet is still arriving. Escalates with the O&amp;M inflation rate.'},
   {k:'omPerMWYr',propcoOnly:true,label:'IDC O&M',unit:'$M / MW IT / yr',step:0.1,scale:1e6,info:'All-in operating cost per MW of IT capacity under management: on-site engineers, NOC, M&E maintenance, security, insurance — and, on this product, ground rent and corporate overhead too, which is why those two lines are zeroed rather than charged again. Escalates at the O&M inflation rate. Excludes electricity: the end user meters and pays power directly.'},
@@ -782,11 +782,14 @@ function compute(p,tog){
     // it off month zero of the model put the 2029 tranche out of warranty the day it
     // landed, four years before its cover expires.
     const wIncl=Math.round((p.warrantyInclYears||0)*12);
+    // Per card, for the same reason upkeep is: a support contract covers a GPU, and as a
+    // slice of capex the identical card cost more to cover inside a pricier box. Not
+    // inflated — this is a vendor price list, not a payroll.
     if(groad){
-      let wBase=0;
-      trs.forEach(t=>{ if(t.m<=m && m<t.m+lifeM && m>t.m+wIncl) wBase+=t.n*(srvCost+netCost); });
-      warr[m]=wBase*p.warrantyPct/12;
-    } else warr[m]=(m>wIncl)?liveCapex*p.warrantyPct/12:0;
+      let wCards=0;
+      trs.forEach(t=>{ if(t.m<=m && m<t.m+lifeM && m>t.m+wIncl) wCards+=t.n*gpus; });
+      warr[m]=wCards*(p.warrantyPerGpuYr||0)/12;
+    } else warr[m]=(m>wIncl)?online[m]*gpus*(p.warrantyPerGpuYr||0)/12:0;
     // A GPU fleet's O&M tracks the kit it owns, so a share of capex is the right base.
     // A landlord's tracks megawatts of plant under management — tying it to build cost
     // would make the site more expensive to run purely because it cost more to build.
@@ -959,7 +962,7 @@ function compute(p,tog){
             // the share of a machine's own life spent out of cover, not of the hold:
             // a 5-year machine under 5-year warranty never pays, however long the hold runs
             warr:(()=>{const L=p.gpuLifeYears||p.years;
-              return p.serverPrice*(1+p.netPct)*p.warrantyPct/12/ssBill*Math.max(0,(L-(p.warrantyInclYears||0))/L);})(),
+              return gpus*(p.warrantyPerGpuYr||0)/12/ssBill*Math.max(0,(L-(p.warrantyInclYears||0))/L);})(),
             oth:(gpus*(p.omPerGpuYr||0)/12 + facGpuPerServer*p.otherPct/12)/ssBill,
             lic:useGpu?(gpus*Math.max(0,Math.min(1,p.platShare||0))*(p.platPerGpu||0)/12)/ssBill:0,
             plat:useGpu?((p.platFixed||0)/12/Math.max(1,target))/ssBill:0,
