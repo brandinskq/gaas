@@ -468,7 +468,7 @@ const DEF={
   rentalDecline:0.12, utilStart:1.0, utilSteady:1.0, utilRamp:6,
   utilWS:1.0, utilOD:0.90, // sold-through by channel: contract is take-or-pay, on-demand runs at 90%
   powerKW:14, netPowerKW:1.4, pue:1.20, warrantyPct:0.05, warrantyPerGpuYr:5530, warrantyInclYears:5, otherPct:0.055, omPerGpuYr:6083, residualPct:0.80, netResidualPct:0, tax:0.15, saudiPct:1.00, occupancy:0.90, rackKW:0,
-  gaPct:0.05, gaFloor:2500000, gaInfl:0.05, omPerMWYr:1500000, renewUplift:0.10,
+  gaPct:0.05, gaFloor:2500000, omInflPct:0.03, gaInflPct:0.08, omPerMWYr:1500000, renewUplift:0.10,
   platPerGpu:3600, platShare:1.00, platFixed:22000000, platStartPct:0.30, // every card licensed; not a settable share, own team ramps to full
   facilityPerMW:12000000, facilityLife:25, psPerMW:424000, psPerGpu:4687.5, shellPct:0.25, usableIT:0.80, // psPerGpu = $2.4M per 512-GPU pod, expressed per card
   // IDC build roadmap — MW handed over, and the project month each tranche goes live.
@@ -622,7 +622,8 @@ const F_COST=[
   {k:'platStartPct',gpuOnly:true,label:'Console team at launch',unit:'% of full team',step:5,pct:true,info:'Size of the console team when the first tranche lands, as a share of the full team, growing linearly with the fleet and plateauing when the build-out ends. A minimum viable neocloud still needs a working portal, billing and API on day one, so this cannot be near zero — 30% is roughly 45 engineers building the product ahead of the customers. Set it to 100% to charge the full team from month one, which overstates the ramp years badly.'},
   {k:'gaFloor',gpuOnly:true,label:'Corporate G&A — minimum',unit:'$M / yr',step:0.5,scale:1e6,tog:'ga',info:'Overhead is charged as the larger of two numbers, compared over the full year: the percentage below applied to that year&#39;s revenue, or this. In 2026 revenue is $5.9M, so the percentage asks for $295k — not a company, a rounding error against a year spent hiring a management team and signing leases. $2.5M is roughly what fifteen to twenty senior people cost fully loaded in Saudi. It only decides the answer in 2026: by 2027 revenue reaches $165M, the percentage asks for $8.25M, and this number never binds again. Rises with salary inflation. Set it to zero to charge the percentage alone.'},
   {k:'gaPct',gpuOnly:true,label:'Corporate G&A',unit:'% of revenue',step:1,pct:true,tog:'ga',info:'Management, sales, finance, legal, admin — corporate only. Platform and licences now sit on their own lines above, and site engineers, NOC and M&amp;E maintenance sit in IDC O&amp;M. CoreWeave ran sales and marketing near 2% of revenue in 2025 with G&amp;A closer to 16%, though that figure carries heavy post-IPO stock compensation; 5% suits an operator selling mostly wholesale to a handful of counterparties rather than running demand generation.'},
-  {k:'gaInfl',label:'Salary inflation',unit:'% / yr',step:0.5,pct:true,info:'Annual growth in every cost made of people: fleet and fabric upkeep, the console team, and corporate overhead. It deliberately does not touch the NVIDIA licence or the hall rent — those are bought at a stated price, and NVIDIA reprices its own list rather than Saudi wages doing it for them. Saudi CPI ran 2.03% in 2025 and 1.8-1.9% through 2026; engineers and operators cost more than headline CPI in a market building out this fast, so 5% carries several points of wage premium. Worth watching against whatever the rental price does: a contracted fleet earns the same each year while its payroll compounds, and the gap eats the margin from the inside.'},
+  {k:'omInflPct',label:'Operations inflation',unit:'% / yr',step:0.5,pct:true,info:'Annual growth in fleet and fabric upkeep and in the console team — the people who keep the machines and the platform running. Saudi CPI ran 2.03% in 2025 and 1.8-1.9% through 2026; engineers and operators cost more than headline CPI in a market building out this fast, so 3% carries a point of wage premium. Does not touch the NVIDIA licence or the hall rent: those are bought at a stated price, and NVIDIA reprices its own list rather than Saudi wages doing it for them.'},
+  {k:'gaInflPct',label:'Corporate G&amp;A inflation',unit:'% / yr',step:0.5,pct:true,info:'Annual growth in head-office cost, kept separate because it does not move with the shop floor. Finance, legal and commercial hires for a business scaling past $4bn of revenue are competed for against every other bidder in the Gulf, and 8% prices that rather than local CPI. It compounds against revenue that does not: a contracted fleet earns the same every year, so this line is the one that eats the margin from the inside — $259M in 2030 becomes $423M by 2035, where 3% would have reached $300M.'},
   {section:'Tax'},
   {k:'saudiPct',label:'Saudi / GCC ownership',unit:'%',step:5,pct:true,info:'Share of equity held by Saudi/GCC owners. Effective tax = ownership × 2.5% (Zakat) + (1−ownership) × 20% (foreign CIT). Zakat is technically levied on the Zakat base (net worth), approximated here on profit. 100% Saudi ⇒ 2.5% effective; 0% ⇒ 20%.'},
 ];
@@ -792,7 +793,13 @@ function compute(p,tog){
     // A GPU fleet's O&M tracks the kit it owns, so a share of capex is the right base.
     // A landlord's tracks megawatts of plant under management — tying it to build cost
     // would make the site more expensive to run purely because it cost more to build.
-    const omInfl=Math.pow(1+p.gaInfl,Math.floor((m-1)/12));
+    // Two rates, because the two cost bases do not move together. Field engineers and
+    // platform staff track Saudi wage growth; a head office scaling into an $8bn-revenue
+    // AI business is competing for finance, legal and commercial people against every
+    // other bidder in the Gulf, and pays for it.
+    const yrIdx=Math.floor((m-1)/12);
+    const omInfl=Math.pow(1+(p.omInflPct||0),yrIdx);
+    const gaInflF=Math.pow(1+(p.gaInflPct||0),yrIdx);
     // Priced per card, because that is what the work scales with. As a slice of capex it
     // rose with the price of the silicon: the same rack cost 26% more to run on GB300 than
     // B300 for no extra effort, and a 15% NVIDIA price rise would have raised the wage bill.
@@ -812,7 +819,7 @@ function compute(p,tog){
     // contracted fleet earns the same every year — so a management team was being paid
     // 2026 salaries in 2035. Inflated like every other people cost.
     const gaFloor = (p.gaPct>0 ? (p.gaFloor||0)/12 : 0); // trued up to an annual comparison below
-    ga[m]=useGA?Math.max(rev[m]*p.gaPct, gaFloor)*omInfl:0; // management, sales, finance, legal
+    ga[m]=useGA?Math.max(rev[m]*p.gaPct, gaFloor)*gaInflF:0; // management, sales, finance, legal
     // Wholesale clusters are handed over as bare metal and bring their own licences;
     // only the managed half needs the orchestration and inference stack, so the
     // per-GPU fee is charged on that share of the fleet actually running. The team
@@ -898,7 +905,7 @@ function compute(p,tog){
       const a=y*12+1, b=Math.min(N,(y+1)*12), months=b-a+1;
       let yrRev=0, yrGa=0;
       for(let m=a;m<=b;m++){ yrRev+=rev[m]; yrGa+=ga[m]; }
-      const want=Math.max(yrRev*p.gaPct, (p.gaFloor||0)*months/12)*Math.pow(1+p.gaInfl,y);
+      const want=Math.max(yrRev*p.gaPct, (p.gaFloor||0)*months/12)*Math.pow(1+(p.gaInflPct||0),y);
       if(Math.abs(want-yrGa)<1e-6) continue;
       const adj=(want-yrGa)/months;
       for(let m=a;m<=b;m++){
