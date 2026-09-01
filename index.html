@@ -619,7 +619,7 @@ const F_COST=[
   {k:'omPerMWYr',propcoOnly:true,label:'IDC O&M',unit:'$M / MW IT / yr',step:0.1,scale:1e6,info:'All-in cost to run a MW: engineers, NOC, M&amp;E, security, insurance, ground rent, overhead. Excludes electricity, which the tenant meters.'},
   {k:'platPerGpu',gpuOnly:true,label:'NVIDIA AI Enterprise',unit:'$ / GPU / yr',step:100,info:'NVIDIA AI Enterprise at list, $4,500 a card a year self-managed. Buys NIM and production support; the Run:ai scheduler core is now free under Apache-2.0.'},
   {k:'consoleStartup',gpuOnly:true,label:'NeoCloud platform — startup',unit:'$M one-time',step:0.5,scale:1e6,info:'One-time cost to stand up the customer-facing console: sign-up, self-service provisioning, metering and billing, tenancy, the public API. Charged in 2026 whether it is a vendor&#39;s set-up fee or the build that precedes launch.'},
-  {k:'consolePerGpu',gpuOnly:true,label:'NeoCloud platform',unit:'$ / GPU / yr',step:25,info:'Annual cost of running the console, per live card. $350 is roughly what a 147-person platform team costs spread across a full fleet, and also the shape a white-label vendor charges — platform fee plus per GPU. Small while the fleet is small, which is the honest profile either way. Not inflated: a vendor rate, like the NVIDIA licence.'},
+  {k:'consolePerGpu',gpuOnly:true,label:'NeoCloud license',unit:'$ / GPU / yr',step:25,info:'Annual licence per live card, on top of the one-time stand-up above. $350 is roughly what a 147-person platform team costs spread across a full fleet, and also the shape a white-label vendor charges — platform fee plus per GPU. Small while the fleet is small, which is the honest profile either way. Not inflated: a vendor rate, like the NVIDIA licence.'},
   {k:'gaFloor',gpuOnly:true,label:'Corporate G&amp;A — startup',unit:'$M / yr',step:0.5,scale:1e6,tog:'ga',info:'What the company costs to run before there is revenue to charge a percentage against. Decides 2026 only.'},
   {k:'gaPct',gpuOnly:true,label:'Corporate G&A',unit:'% of revenue',step:1,pct:true,tog:'ga',info:'Head office: management, sales, finance, legal. Charged as the larger of this or the startup figure above, judged over the full year.'},
   {k:'omInflPct',label:'Operations inflation',unit:'% / yr',step:0.5,pct:true,info:'Annual rise in fleet upkeep and the console team. Saudi CPI ran ~2%; engineers cost a point more.'},
@@ -1092,7 +1092,7 @@ function dollarTable(o){
     rows.push(['Development fees',o.cb.dev,CC.dev]);
     rows.push([o.useFac?'Ground rent':'Colo fee',o.cb.rent,CC.rent],['Electricity',o.cb.elec,CC.elec],['Network power',o.cb.netpower,CC.netpower],['GPU &amp; Fabric O&amp;M',o.cb.oth,CC.oth]);
     if(o.cb.lic>0)rows.push(['NVIDIA AI Enterprise',o.cb.lic,CC.lic]);
-    if(o.cb.plat>0)rows.push(['NeoCloud platform',o.cb.plat,CC.plat]);
+    if(o.cb.plat>0)rows.push(['NeoCloud license',o.cb.plat,CC.plat]);
     if(o.useGA)rows.push(['Corporate G&amp;A',o.cb.ga,CC.ga]);
   }else{
     rows.push(['Facility depreciation',o.cb.depr,CC.depr],['Development fees',o.cb.dev,CC.dev],['Ground rent',o.cb.rent,CC.rent],['IDC O&amp;M',o.cb.oth,CC.oth]);
