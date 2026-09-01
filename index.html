@@ -469,7 +469,7 @@ const DEF={
   utilWS:1.0, utilOD:0.90, // sold-through by channel: contract is take-or-pay, on-demand runs at 90%
   powerKW:14, netPowerKW:1.4, pue:1.20, warrantyPct:0.05, warrantyPerGpuYr:5530, warrantyInclYears:5, otherPct:0.055, omPerGpuYr:6083, residualPct:0.80, netResidualPct:0, tax:0.15, saudiPct:1.00, occupancy:0.90, rackKW:0,
   gaPct:0.05, gaFloor:2500000, omInflPct:0.03, gaInflPct:0.08, omPerMWYr:1500000, renewUplift:0.10,
-  platPerGpu:3600, platShare:1.00, platFixed:22000000, platStartPct:0.30, // every card licensed; not a settable share, own team ramps to full
+  platPerGpu:4500, platShare:1.00, platFixed:22000000, platStartPct:0.30, // every card licensed; not a settable share, own team ramps to full
   facilityPerMW:12000000, facilityLife:25, psPerMW:424000, psPerGpu:4687.5, shellPct:0.25, usableIT:0.80, // psPerGpu = $2.4M per 512-GPU pod, expressed per card
   // IDC build roadmap — MW handed over, and the project month each tranche goes live.
   // Month 1 = Jan 2026, so month 12 = end of 2026 and the 2027 quarters land on 15/18/21/24.
@@ -617,7 +617,7 @@ const F_COST=[
   {k:'warrantyInclYears',gpuOnly:true,label:'Warranty included in price',unit:'yrs',step:1,info:'Years of warranty inside the purchase price, counted from each tranche&#39;s own delivery. Shorten it and the line above starts charging.'},
   {k:'omPerGpuYr',gpuOnly:true,label:'GPU &amp; Fabric O&amp;M',unit:'$ / GPU / yr',step:250,info:'Fleet and fabric upkeep per card: break-fix, spares, optics, monitoring, smart hands. Not the building — that is in the hall rent.'},
   {k:'omPerMWYr',propcoOnly:true,label:'IDC O&M',unit:'$M / MW IT / yr',step:0.1,scale:1e6,info:'All-in cost to run a MW: engineers, NOC, M&amp;E, security, insurance, ground rent, overhead. Excludes electricity, which the tenant meters.'},
-  {k:'platPerGpu',gpuOnly:true,label:'NVIDIA AI Enterprise',unit:'$ / GPU / yr',step:100,info:'NVIDIA AI Enterprise on the 5-year prepay ($18,000 a card), which bundles Run:ai and NIM. Every live card is licensed.'},
+  {k:'platPerGpu',gpuOnly:true,label:'NVIDIA AI Enterprise',unit:'$ / GPU / yr',step:100,info:'NVIDIA AI Enterprise at list, $4,500 a card a year self-managed. Buys NIM and production support; the Run:ai scheduler core is now free under Apache-2.0.'},
   {k:'platFixed',gpuOnly:true,label:'Neocloud console &amp; portal',unit:'$M / yr at full team',step:1,scale:1e6,info:'The customer-facing console NVIDIA does not sell you: sign-up, portal, billing, tenancy, API. About 147 people at full size.'},
   {k:'platStartPct',gpuOnly:true,label:'Console team at launch',unit:'% of full team',step:5,pct:true,info:'Console team when the first cards land, as a share of full size. It cannot be near zero — the portal has to work on day one.'},
   {k:'gaFloor',gpuOnly:true,label:'Corporate G&amp;A — startup',unit:'$M / yr',step:0.5,scale:1e6,tog:'ga',info:'What the company costs to run before there is revenue to charge a percentage against. Decides 2026 only.'},
