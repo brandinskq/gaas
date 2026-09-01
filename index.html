@@ -468,7 +468,7 @@ const DEF={
   rentalDecline:0.12, utilStart:1.0, utilSteady:1.0, utilRamp:6,
   utilWS:1.0, utilOD:0.90, // sold-through by channel: contract is take-or-pay, on-demand runs at 90%
   powerKW:14, netPowerKW:1.4, pue:1.20, warrantyPct:0.05, warrantyPerGpuYr:5530, warrantyInclYears:5, otherPct:0.055, omPerGpuYr:6083, residualPct:0.80, netResidualPct:0, tax:0.15, saudiPct:1.00, occupancy:0.90, rackKW:0,
-  gaPct:0.05, gaFloor:2500000, omInflPct:0.03, gaInflPct:0.08, omPerMWYr:1500000, renewUplift:0.10,
+  gaPct:0.05, gaFloor:2500000, omInflPct:0.05, gaInflPct:0.08, omPerMWYr:1500000, renewUplift:0.10,
   platPerGpu:4500, platShare:1.00, consoleStartup:6000000, consolePerGpu:350, // every card licensed; console bought in, not built
   facilityPerMW:12000000, facilityLife:25, psPerMW:424000, psPerGpu:4687.5, shellPct:0.25, usableIT:0.80, // psPerGpu = $2.4M per 512-GPU pod, expressed per card
   // IDC build roadmap — MW handed over, and the project month each tranche goes live.
@@ -616,7 +616,7 @@ const F_COST=[
   {k:'consolePerGpu',gpuOnly:true,label:'NeoCloud license',unit:'$ / GPU / yr',step:25,info:'Annual licence per live card, on top of the one-time stand-up above. $350 is roughly what a 147-person platform team costs spread across a full fleet, and also the shape a white-label vendor charges — platform fee plus per GPU. Small while the fleet is small, which is the honest profile either way. Not inflated: a vendor rate, like the NVIDIA licence.'},
   {k:'gaFloor',gpuOnly:true,label:'Corporate G&amp;A — startup',unit:'$M / yr',step:0.5,scale:1e6,tog:'ga',info:'What the company costs to run before there is revenue to charge a percentage against. Decides 2026 only.'},
   {k:'gaPct',gpuOnly:true,label:'Corporate G&A',unit:'% of revenue',step:1,pct:true,tog:'ga',info:'Head office: management, sales, finance, legal. Charged as the larger of this or the startup figure above, judged over the full year.'},
-  {k:'omInflPct',label:'Operations inflation',unit:'% / yr',step:0.5,pct:true,info:'Annual rise in fleet upkeep and the console team. Saudi CPI ran ~2%; engineers cost a point more.'},
+  {k:'omInflPct',label:'Operations inflation',unit:'% / yr',step:0.5,pct:true,info:'Annual rise in fleet upkeep and the console team. Saudi CPI ran ~2%; engineers cost far more than that in a market building out this fast.'},
   {k:'gaInflPct',label:'Corporate G&amp;A inflation',unit:'% / yr',step:0.5,pct:true,info:'Annual rise in head office, separate because it does not track the shop floor. Compounds against revenue that is contracted flat.'},
   {section:'Tax'},
   {k:'saudiPct',label:'Saudi / GCC ownership',unit:'%',step:5,pct:true,info:'Saudi/GCC ownership share. 100% pays 2.5% Zakat; foreign ownership pays 20% CIT pro rata.'},
