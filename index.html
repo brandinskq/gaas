@@ -620,7 +620,7 @@ const F_COST=[
   {k:'platPerGpu',gpuOnly:true,label:'NVIDIA AI Enterprise',unit:'$ / GPU / yr',step:100,info:'NVIDIA AI Enterprise on the five-year prepay: $18,000 per GPU for five years, so $3,600/yr, against $4,500 buying one year at a time. The five-year term is the one to take here because it matches the hardware refresh cycle exactly — licence and card are bought and retired together. Bundles the Run:ai orchestrator NVIDIA acquired in 2024, NIM inference microservices and production support. Charged on the live fleet, so replacement tranches are relicensed as they land. Orchestration-only platforms (Rafay, Ori) quote a platform fee plus a per-GPU rate and publish neither — get a quote before assuming this rate is the floor.'},
   {k:'platFixed',gpuOnly:true,label:'Neocloud console &amp; portal',unit:'$M / yr at full team',step:1,scale:1e6,info:'The customer-facing console the NVIDIA licence does not buy — the thing that makes this a cloud anyone can buy from rather than a cluster: sign-up and onboarding, the self-service portal, metering and billing, tenancy and quotas, the public API and SDK, and 24/7 platform SRE behind all of it. Sized bottom-up at roughly 147 people fully loaded at $150k in Saudi — CoreWeave carried about 1,000 engineers against $5.1bn of revenue and Nebius over 500, but both build multi-region product estates rather than one region. This is the steady-state figure; the team ramps to it on the setting below. It does not scale with GPU count once built — the same billing system serves 20k cards or 60k — which is why it is a fixed cost rather than a per-card one. Escalates with salary inflation.'},
   {k:'platStartPct',gpuOnly:true,label:'Console team at launch',unit:'% of full team',step:5,pct:true,info:'Size of the console team when the first tranche lands, as a share of the full team, growing linearly with the fleet and plateauing when the build-out ends. A minimum viable neocloud still needs a working portal, billing and API on day one, so this cannot be near zero — 30% is roughly 45 engineers building the product ahead of the customers. Set it to 100% to charge the full team from month one, which overstates the ramp years badly.'},
-  {k:'gaFloor',gpuOnly:true,label:'Corporate G&A — minimum',unit:'$M / yr',step:0.5,scale:1e6,tog:'ga',info:'Overhead is charged as the larger of two numbers: the percentage below, or this. In 2026 revenue is $5.9M, so the percentage asks for $295k — not a company, a rounding error against a year spent hiring a management team and signing leases. $2.5M is roughly what fifteen to twenty senior people cost fully loaded in Saudi. It only decides the answer in 2026: by 2027 revenue reaches $165M, the percentage asks for $8.25M, and this number never binds again. Rises with salary inflation. Set it to zero to charge the percentage alone.'},
+  {k:'gaFloor',gpuOnly:true,label:'Corporate G&A — minimum',unit:'$M / yr',step:0.5,scale:1e6,tog:'ga',info:'Overhead is charged as the larger of two numbers, compared over the full year: the percentage below applied to that year&#39;s revenue, or this. In 2026 revenue is $5.9M, so the percentage asks for $295k — not a company, a rounding error against a year spent hiring a management team and signing leases. $2.5M is roughly what fifteen to twenty senior people cost fully loaded in Saudi. It only decides the answer in 2026: by 2027 revenue reaches $165M, the percentage asks for $8.25M, and this number never binds again. Rises with salary inflation. Set it to zero to charge the percentage alone.'},
   {k:'gaPct',gpuOnly:true,label:'Corporate G&A',unit:'% of revenue',step:1,pct:true,tog:'ga',info:'Management, sales, finance, legal, admin — corporate only. Platform and licences now sit on their own lines above, and site engineers, NOC and M&amp;E maintenance sit in IDC O&amp;M. CoreWeave ran sales and marketing near 2% of revenue in 2025 with G&amp;A closer to 16%, though that figure carries heavy post-IPO stock compensation; 5% suits an operator selling mostly wholesale to a handful of counterparties rather than running demand generation.'},
   {k:'gaInfl',label:'Salary inflation',unit:'% / yr',step:0.5,pct:true,info:'Annual growth in every cost made of people: fleet and fabric upkeep, the console team, and corporate overhead. It deliberately does not touch the NVIDIA licence or the hall rent — those are bought at a stated price, and NVIDIA reprices its own list rather than Saudi wages doing it for them. Saudi CPI ran 2.03% in 2025 and 1.8-1.9% through 2026; engineers and operators cost more than headline CPI in a market building out this fast, so 5% carries several points of wage premium. Worth watching against whatever the rental price does: a contracted fleet earns the same each year while its payroll compounds, and the gap eats the margin from the inside.'},
   {section:'Tax'},
@@ -811,7 +811,7 @@ function compute(p,tog){
     // Overhead is a payroll. Left as a flat share of revenue it never moved, because a
     // contracted fleet earns the same every year — so a management team was being paid
     // 2026 salaries in 2035. Inflated like every other people cost.
-    const gaFloor = (p.gaPct>0 ? (p.gaFloor||0)/12 : 0);
+    const gaFloor = (p.gaPct>0 ? (p.gaFloor||0)/12 : 0); // trued up to an annual comparison below
     ga[m]=useGA?Math.max(rev[m]*p.gaPct, gaFloor)*omInfl:0; // management, sales, finance, legal
     // Wholesale clusters are handed over as bare metal and bring their own licences;
     // only the managed half needs the orchestration and inference stack, so the
@@ -886,6 +886,34 @@ function compute(p,tog){
     projFcf[m]=ebitda[m]-Math.max(0,ebit[m]*taxRate)+capexCf[m]-dwc[m]+resale[m];
     eqFcf[m]=cfo[m]+capexCf[m]+dDraw[m]-dRepay[m]+resale[m];
     cumEq[m]=cumEq[m-1]+eqFcf[m];
+  }
+  // The minimum is quoted per year, so it has to be judged per year. Compared month by
+  // month inside the loop, a $2.5M minimum charged $2.587M: eleven months took the
+  // monthly share and the twelfth took 5% of revenue, because the first tranche landed
+  // in month 12 and put a whole year's revenue into one month. Nothing was wrong with
+  // the arithmetic and everything was wrong with the label. Corrected here rather than
+  // in the loop because a year's revenue is not known until the year has been walked.
+  if(useGA && p.gaPct>0 && (p.gaFloor||0)>0){
+    for(let y=0; y<Math.ceil(N/12); y++){
+      const a=y*12+1, b=Math.min(N,(y+1)*12), months=b-a+1;
+      let yrRev=0, yrGa=0;
+      for(let m=a;m<=b;m++){ yrRev+=rev[m]; yrGa+=ga[m]; }
+      const want=Math.max(yrRev*p.gaPct, (p.gaFloor||0)*months/12)*Math.pow(1+p.gaInfl,y);
+      if(Math.abs(want-yrGa)<1e-6) continue;
+      const adj=(want-yrGa)/months;
+      for(let m=a;m<=b;m++){
+        ga[m]+=adj; cashopex[m]+=adj;
+        ebitda[m]=rev[m]-cashopex[m];
+        ebit[m]=ebitda[m]-depr[m];
+        pbt[m]=ebit[m]-intPaid[m]-feeA[m];
+        tax[m]=Math.max(0,pbt[m]*taxRate);
+        ni[m]=pbt[m]-tax[m];
+        cfo[m]=ni[m]+depr[m]-dwc[m];
+        projFcf[m]=ebitda[m]-Math.max(0,ebit[m]*taxRate)+capexCf[m]-dwc[m]+resale[m];
+        eqFcf[m]=cfo[m]+capexCf[m]+dDraw[m]-dRepay[m]+resale[m];
+      }
+    }
+    for(let m=1;m<=N;m++) cumEq[m]=cumEq[m-1]+eqFcf[m];
   }
   // target is servers for a GPU fleet but megawatts for a landlord, so this line
   // was valuing 120 MW as if they were 120 servers to resell
