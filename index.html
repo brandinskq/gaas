@@ -467,8 +467,8 @@ const DEF={
   coloMW:2, coloRate:220, coloLeaseYears:10, coloEsc:0.025,
   rentalDecline:0.12, utilStart:1.0, utilSteady:1.0, utilRamp:6,
   utilWS:1.0, utilOD:0.90, // sold-through by channel: contract is take-or-pay, on-demand runs at 90%
-  powerKW:14, netPowerKW:1.4, pue:1.20, warrantyPct:0.05, warrantyInclYears:5, otherPct:0.035, residualPct:0.80, netResidualPct:0, tax:0.15, saudiPct:1.00, occupancy:0.90, rackKW:0,
-  gaPct:0.05, gaFloor:2500000, gaInfl:0.03, omPerMWYr:1500000, renewUplift:0.10,
+  powerKW:14, netPowerKW:1.4, pue:1.20, warrantyPct:0.05, warrantyInclYears:5, otherPct:0.055, omPerGpuYr:6083, residualPct:0.80, netResidualPct:0, tax:0.15, saudiPct:1.00, occupancy:0.90, rackKW:0,
+  gaPct:0.05, gaFloor:2500000, gaInfl:0.05, omPerMWYr:1500000, renewUplift:0.10,
   platPerGpu:3600, platShare:1.00, platFixed:22000000, platStartPct:0.30, // NVAIE 5yr prepay across the fleet; own team ramps to full
   facilityPerMW:12000000, facilityLife:25, psPerMW:424000, psPerGpu:4687.5, shellPct:0.25, usableIT:0.80, // psPerGpu = $2.4M per 512-GPU pod, expressed per card
   // IDC build roadmap — MW handed over, and the project month each tranche goes live.
@@ -615,7 +615,7 @@ const F_COST=[
   {k:'pue',gpuOnly:true,label:'PUE',unit:'x',step:0.05,info:'Power Usage Effectiveness — total facility power ÷ IT power. Air-cooled ~1.4-1.5; liquid-cooled ~1.2-1.3. Multiplies the electricity bill.'},
   {k:'warrantyPct',gpuOnly:true,label:'Warranty & support',unit:'% capex/yr',step:0.5,pct:true,info:'OEM/vendor hardware support & spares, as % of server+network capex per year, charged only AFTER the bundled-warranty window below. 5% ≈ enterprise SLA; 3.5-4% self-maintenance.'},
   {k:'warrantyInclYears',gpuOnly:true,label:'Warranty included in price',unit:'yrs',step:1,info:'Years of OEM warranty bundled in the node purchase price — no separate support charge during this window, counted from each tranche&#39;s own delivery. Blackwell-generation systems ship with 5yr where the H100 generation shipped with 3yr; at a 5-year holding period that covers the kit for its whole life, and matters again at resale because cover still running is worth a premium in the secondary market. If the vendor charges for the extension, add it to the node price rather than here.'},
-  {k:'otherPct',gpuOnly:true,label:'GPU &amp; Fabric O&amp;M',unit:'% capex/yr',step:0.5,pct:true,info:'Keeping the fleet and its fabric running: hardware break-fix labour and the RMA process, spares logistics, optics and cable replacement, cluster monitoring, firmware and node lifecycle, smart hands. Not the building — on-site engineers, NOC, M&amp;E and security belong to the landlord and are already bought with the hall rent above, so charging them here would pay for them twice. As % of live server and network capex per year, escalating at the O&amp;M inflation rate. Deliberately generous: 3.5% is $4,357 a card a year against a bottom-up build of $500-1,000, and warranty covers every part for the whole five-year life, so the difference is a conservative margin rather than a costing.'},
+  {k:'omPerGpuYr',gpuOnly:true,label:'GPU &amp; Fabric O&amp;M',unit:'$ / GPU / yr',step:250,info:'Keeping the fleet and its fabric running: hardware break-fix labour and the RMA process, spares logistics, optics and cable replacement, cluster monitoring, firmware and node lifecycle, smart hands. Not the building — on-site engineers, NOC, M&amp;E and security belong to the landlord and are already bought with the hall rent, so charging them here would pay for them twice. Priced per card rather than as a share of capex, because that is what the work scales with: on a capex basis the same rack cost 26% more to run on GB300 than on B300 for no extra effort, and a NVIDIA price rise would have raised the wage bill. $6,083 is deliberately generous against a bottom-up build of $500-1,000, with warranty covering every part for the full five-year life. Flat per card: a card costs the same in its first month as its last, so the early years only look cheaper because the fleet is still arriving. Escalates with the O&amp;M inflation rate.'},
   {k:'omPerMWYr',propcoOnly:true,label:'IDC O&M',unit:'$M / MW IT / yr',step:0.1,scale:1e6,info:'All-in operating cost per MW of IT capacity under management: on-site engineers, NOC, M&E maintenance, security, insurance — and, on this product, ground rent and corporate overhead too, which is why those two lines are zeroed rather than charged again. Escalates at the O&M inflation rate. Excludes electricity: the end user meters and pays power directly.'},
   {k:'platPerGpu',gpuOnly:true,label:'NVIDIA AI Enterprise',unit:'$ / GPU / yr',step:100,info:'NVIDIA AI Enterprise on the five-year prepay: $18,000 per GPU for five years, so $3,600/yr, against $4,500 buying one year at a time. The five-year term is the one to take here because it matches the hardware refresh cycle exactly — licence and card are bought and retired together. Bundles the Run:ai orchestrator NVIDIA acquired in 2024, NIM inference microservices and production support. Charged on the live fleet, so replacement tranches are relicensed as they land. Orchestration-only platforms (Rafay, Ori) quote a platform fee plus a per-GPU rate and publish neither — get a quote before assuming this rate is the floor.'},
   {k:'platShare',gpuOnly:true,label:'Fleet under licence',unit:'% of GPUs',step:5,pct:true,info:'Share of the live fleet carrying the platform licence. 100% because this is a neocloud selling to the market rather than a captive cluster: every card sits behind the same platform and is licensed on the same five-year procurement cycle it is bought on, including the replacement tranches. Drop this only if wholesale clusters are handed over as unlicensed bare metal with the customer bringing its own entitlement.'},
@@ -791,7 +791,12 @@ function compute(p,tog){
     // A landlord's tracks megawatts of plant under management — tying it to build cost
     // would make the site more expensive to run purely because it cost more to build.
     const omInfl=Math.pow(1+p.gaInfl,Math.floor((m-1)/12));
-    oth[m]=useGpu?(liveCapex+cumF[m])*p.otherPct/12*omInfl
+    // Priced per card, because that is what the work scales with. As a slice of capex it
+    // rose with the price of the silicon: the same rack cost 26% more to run on GB300 than
+    // B300 for no extra effort, and a 15% NVIDIA price rise would have raised the wage bill.
+    // Any facility the fleet owns still runs on the capex share, which is the right basis
+    // for plant.
+    oth[m]=useGpu?(online[m]*gpus*(p.omPerGpuYr||0)/12 + cumF[m]*p.otherPct/12)*omInfl
                  :build[m]*(p.omPerMWYr||0)/12*omInfl;
     othF[m]=useGpu?cumF[m]*p.otherPct/12*omInfl:oth[m];
     intR[m]=useFac?gpuMW*1000*p.coloRate*(online[m]/target)*Math.pow(1+p.coloEsc,Math.floor((m-1)/12)):0;
@@ -801,8 +806,11 @@ function compute(p,tog){
     // costs until the percentage overtakes it, which here happens in 2027. Only applies
     // where a percentage is charged at all, so a product that folds overhead into its O&M
     // rate does not silently acquire a second one.
-    const gaFloor = (p.gaPct>0 ? (p.gaFloor||0)/12*omInfl : 0);
-    ga[m]=useGA?Math.max(rev[m]*p.gaPct, gaFloor):0; // management, sales, finance, legal
+    // Overhead is a payroll. Left as a flat share of revenue it never moved, because a
+    // contracted fleet earns the same every year — so a management team was being paid
+    // 2026 salaries in 2035. Inflated like every other people cost.
+    const gaFloor = (p.gaPct>0 ? (p.gaFloor||0)/12 : 0);
+    ga[m]=useGA?Math.max(rev[m]*p.gaPct, gaFloor)*omInfl:0; // management, sales, finance, legal
     // Wholesale clusters are handed over as bare metal and bring their own licences;
     // only the managed half needs the orchestration and inference stack, so the
     // per-GPU fee is charged on that share of the fleet actually running. The team
@@ -952,7 +960,7 @@ function compute(p,tog){
             // a 5-year machine under 5-year warranty never pays, however long the hold runs
             warr:(()=>{const L=p.gpuLifeYears||p.years;
               return p.serverPrice*(1+p.netPct)*p.warrantyPct/12/ssBill*Math.max(0,(L-(p.warrantyInclYears||0))/L);})(),
-            oth:(p.serverPrice*(1+p.netPct)+facGpuPerServer)*p.otherPct/12/ssBill,
+            oth:(gpus*(p.omPerGpuYr||0)/12 + facGpuPerServer*p.otherPct/12)/ssBill,
             lic:useGpu?(gpus*Math.max(0,Math.min(1,p.platShare||0))*(p.platPerGpu||0)/12)/ssBill:0,
             plat:useGpu?((p.platFixed||0)/12/Math.max(1,target))/ssBill:0,
             ga:useGA?p.gaPct*baseRental:0};
