@@ -1122,6 +1122,14 @@ function compute(p,tog){
     costBasis=cb.depr+cb.dev+cb.rent+cb.oth+cb.ga;
     unitPrice=p.coloRate; unitStr='/kW\u00b7mo'; rentMo=p.coloRate;
   }
+  // The stack above is year one. Upkeep inflates at omInflPct and overhead at gaInflPct
+  // inside the engine, while a contracted price does not move — so the margin narrows
+  // across the hold. Leaving a first-year number to stand for every year overstated it.
+  const lastRevY=(()=>{let k=1;yrs.forEach(x=>{if(x.rev>1e5)k=x.y;});return k;})();
+  const costBasisEnd=costBasis
+    +(cb.oth||0)*(Math.pow(1+(p.omInflPct||0),lastRevY-1)-1)
+    +(cb.ga ||0)*(Math.pow(1+(p.gaInflPct||0),lastRevY-1)-1);
+  const marginPctEnd=unitPrice>0?(unitPrice-costBasisEnd)/unitPrice:0;
   const margin=unitPrice-costBasis, marginPct=unitPrice>0?margin/unitPrice:0;
   const avgEbMargin=(()=>{let r=0,e=0;for(let m=1;m<=N;m++){r+=rev[m];e+=ebitda[m];}return r>0?e/r:0;})();
 
@@ -1134,6 +1142,7 @@ function compute(p,tog){
     pIRR,eIRR,projNPV,eqNPV,moic,cashBack:inflow,minDSCR,minICR,totRev,totNI,totEb,
     paybackYears:payM==null?null:payM/12,
     cb,costBasis,margin,marginPct,avgEbMargin,rentMo,useGpu,useTaas,unitPrice,unitStr,
+    costBasisEnd,marginPctEnd,lastRevY,
     yrs,mo};
 }
 
@@ -1522,15 +1531,15 @@ function render(){
     ${kpi('Min DSCR',T.debt?(o.minDSCR==null?'n/a':o.minDSCR.toFixed(2)+'x'):'—',T.debt?('vs '+(S.dscrCov||1.35).toFixed(2)+'x · min ICR '+(o.minICR==null?'n/a':o.minICR.toFixed(1)+'x')):'debt off',!T.debt?'var(--dim)':(o.minDSCR!=null&&o.minDSCR<(S.dscrCov||1.35))?'var(--fail)':'var(--pass)')}
     ${kpi('Peak equity need',money(o.peakEquity),'max cash drawdown, funded by equity')}
     ${kpi('Exit value',money(o.termProj),o.useExit?(S.exitMult+'x LTM EBITDA · '+(o.useExitCur?'current-price':'market re-contract')):'liquidation: residual'+(o.useWC?' + AR':''),o.useExit?'var(--power)':'var(--dim)')}
-    ${kpi('Cost basis',dol(o.costBasis),'per '+o.unitStr.replace(/^\//,'')+', steady state')}
+    ${kpi('Cost basis',dol(o.costBasis),'per '+o.unitStr.replace(/^\//,'')+' · year 1'+(o.costBasisEnd>o.costBasis+0.005?` &rarr; ${dol(o.costBasisEnd)} by year ${o.lastRevY}`:''))}
     ${kpi(o.useTaas?'Token rev / GPU / mo':o.useGpu?'Rental / GPU / mo':'Lease / kW / mo',o.useGpu?money(o.rentMo):dol(o.rentMo),o.useGpu?('start · '+(S.utilSteady*100).toFixed(0)+'% util'):'committed capacity')}
   </div>
 
   <div class="card">
-    <div class="h">Where each ${o.useTaas?'token':o.useGpu?'rental':'lease'} dollar goes — per ${o.useGpu?'GPU-hour':'kW / month'}</div>
+    <div class="h">Where each ${o.useTaas?'token':o.useGpu?'rental':'lease'} dollar goes — per ${o.useGpu?'GPU-hour':'kW / month'}, year 1</div>
     ${dollarBar(o,o.unitPrice)}
     ${dollarTable(o)}
-    <div class="foot">${o.useGpu?'cyan family = compute layer (servers) · amber family = power &amp; facility layer':'every line is a facility cost — the lease price carries depreciation, development, ground rent, O&amp;M and overhead'}</div>
+    <div class="foot">${o.useGpu?'cyan family = compute layer (servers) · amber family = power &amp; facility layer':'every line is a facility cost — the lease price carries depreciation, development, ground rent, O&amp;M and overhead'}${o.costBasisEnd>o.costBasis+0.005?` · This is the <b>first full year</b>. Upkeep inflates at ${(S.omInflPct*100).toFixed(0)}%/yr and overhead at ${(S.gaInflPct*100).toFixed(0)}%/yr while a contracted price does not, so by year ${o.lastRevY} the stack is <b>${dol(o.costBasisEnd)}</b> and the margin is <b>${(o.marginPctEnd*100).toFixed(0)}%</b> against ${(o.marginPct*100).toFixed(0)}% here.`:''}</div>
   </div>
 
   <div class="card">
