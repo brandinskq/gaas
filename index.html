@@ -666,10 +666,10 @@ const LICENCE_LANES=[
      d:'Filed by whoever ships — OEM, NVIDIA direct, or the distributor. O&amp;R supplies the end-user and end-use statements and the hall undertakings.',
      b:'EO 12981: refer within 9 days, agency recommendations within 30, resolve or go to the President within 90. The clock stops whenever information is requested, which is why advanced computing runs 6&plus; months. Humain: May 2025 framework &rarr; 19 Nov 2025 authorization, about 6 months.',
      flag:'Watch how the end-user section is written, China ties above all.'},
-    {n:'3', t:'Data Center VEU', o:'O&amp;R &rarr; BIS / ERC', s:2, e:6, opt:true,
+    {n:'3', t:'Data Center VEU', o:'O&amp;R &rarr; BIS / ERC', s:2, e:6, standing:true,
      d:'The whitelist itself — being listed in Supp. No. 7 to Pt 748 <i>is</i> the authorization, and a listed hall then ships eligible items with no per-shipment licence. O&amp;R can apply for itself: §748.15(a)(2)(iv) takes applications from exporters, reexporters or end users. The listing is public, and it carries semi-annual reporting and on-site US Government review under §748.15(f).',
      b:'Supp. No. 9 to Pt 748: ERC decides within 30 days of a complete application circulating, clock stopped on RFIs. On the books since 2 Oct 2024, but the AI Diffusion Rule that shaped it was rescinded 13 May 2025 and no data-centre VEU is known to have been granted. The universal track adds 180 days&rsquo; notice of a new hall&rsquo;s physical address before anything ships to it.',
-     flag:'Do not put this on the critical path. Unproven, revocable under §748.15(a)(4), and the Gulf approvals went by licence.'},
+     flag:'Off the critical path to first power, on it for the business. Unproven and revocable under §748.15(a)(4), so run it beside the licence rather than instead of it — but do not treat it as a nice-to-have.'},
   ]},
   {name:'Procurement', sub:'commercial', c:'#4f6b00', steps:[
     {n:'A', t:'NVIDIA allocation', o:'O&amp;R &rarr; NVIDIA / OEM', s:0, e:3,
@@ -1228,6 +1228,14 @@ const monLab=m=>{const i=Math.max(0,Math.round(m)-1); return MON[i%12]+" '"+Stri
    today actually falls on that axis. Drawing it from month 1 would show a run-up that
    has already elapsed. */
 function nowM(){const d=new Date(); return (d.getFullYear()-2026)*12+d.getMonth()+1;}
+/* Distinct delivery months in the build roadmap. One licence covers one shipment; the
+   second tranche is where a per-shipment licence stops scaling and the standing
+   authorization stops being optional. */
+function trancheMs(){return [...new Set((S.gpuRoadmap||[]).map(x=>Math.round(x.m||0)).filter(x=>x>0))].sort((a,b)=>a-b);}
+function veuNote(){const t=trancheMs();
+  return t.length>1
+    ? `${t.length} tranches in the roadmap — the second lands ${monLab(t[1])}, and every one after it needs its own licence without this.`
+    : 'One tranche in the roadmap, so one licence covers it — but the moment the fleet buys again, this is the only thing that scales.';}
 const planEndM=()=>nowM()+Math.max(...LICENCE_LANES.flatMap(l=>l.steps.map(x=>x.e)));
 /* Gantt of the run-up, drawn on real months against two markers: the month the build
    roadmap assumes first power, and the earliest the plan itself can deliver it. The gap
@@ -1254,13 +1262,11 @@ function licenceChart(t0){
     lane.steps.forEach(st=>{
       const x0=X(m0+st.s), x1=X(m0+st.e), cy=y+rowH/2;
       if(st.crit)crit.push([x0,x1,cy]); idx++;
-      if(st.n)r+=`<rect x="0" y="${cy-6.5}" width="13" height="13" rx="2" fill="${st.opt?'#ffffff':lane.c}" stroke="${lane.c}"/>`
-             +`<text x="6.5" y="${cy+4}" fill="${st.opt?lane.c:'#ffffff'}" font-size="9" font-weight="700" font-family="ui-monospace,monospace" text-anchor="middle">${st.n}</text>`;
-      r+=`<text x="${st.n?18:0}" y="${cy-0.5}" fill="#111318" font-size="10" font-weight="600">${st.t}${st.opt?' <tspan fill="#6f7885" font-weight="400">· optional</tspan>':''}</text>`;
+      if(st.n)r+=`<rect x="0" y="${cy-6.5}" width="13" height="13" rx="2" fill="${lane.c}"/>`
+             +`<text x="6.5" y="${cy+4}" fill="#ffffff" font-size="9" font-weight="700" font-family="ui-monospace,monospace" text-anchor="middle">${st.n}</text>`;
+      r+=`<text x="${st.n?18:0}" y="${cy-0.5}" fill="#111318" font-size="10" font-weight="600">${st.t}${st.standing?' <tspan fill="#6f7885" font-weight="400">· standing authorization</tspan>':''}</text>`;
       r+=`<text x="${st.n?18:0}" y="${cy+9.5}" fill="#6f7885" font-size="8.5" font-family="ui-monospace,monospace">${st.o}</text>`;
-      r+=st.opt
-        ? `<rect x="${x0.toFixed(1)}" y="${cy-6}" width="${Math.max(3,x1-x0).toFixed(1)}" height="12" rx="3" fill="none" stroke="${lane.c}" stroke-dasharray="3 2"/>`
-        : `<rect x="${x0.toFixed(1)}" y="${cy-6}" width="${Math.max(3,x1-x0).toFixed(1)}" height="12" rx="3" fill="${lane.c}" opacity="${st.crit?'1':'.6'}"/>`;
+      r+=`<rect x="${x0.toFixed(1)}" y="${cy-6}" width="${Math.max(3,x1-x0).toFixed(1)}" height="12" rx="3" fill="${lane.c}" opacity="${st.crit?'1':'.6'}"/>`;
       r+=`<text x="${(x1+5).toFixed(1)}" y="${cy+3.5}" fill="#6f7885" font-size="8" font-family="ui-monospace,monospace">${(st.e-st.s).toFixed(1).replace('.0','')}mo</text>`;
       y+=rowH;
     });
@@ -1284,9 +1290,9 @@ function licenceTable(t0){
   LICENCE_LANES.forEach(lane=>{
     b+=`<tr><td colspan="4" style="text-align:left;padding-top:9px;color:${lane.c};font-weight:700;letter-spacing:.1em;font-size:8.5px">${lane.name.toUpperCase()} &#183; ${lane.sub}</td></tr>`;
     lane.steps.forEach(st=>{
-      b+=`<tr><td style="text-align:left;color:var(--ink);font-weight:600">${st.n?st.n+' &#183; ':''}${st.t}${st.opt?' <span style="color:var(--dim);font-weight:400">· optional</span>':''}<br><span style="color:var(--dim);font-weight:400">${st.o}</span></td>`
+      b+=`<tr><td style="text-align:left;color:var(--ink);font-weight:600">${st.n?st.n+' &#183; ':''}${st.t}${st.standing?' <span style="color:var(--dim);font-weight:400">· standing authorization</span>':''}<br><span style="color:var(--dim);font-weight:400">${st.o}</span></td>`
        +`<td style="text-align:left;white-space:nowrap">${monLab(m0+st.s)} &#8211; ${monLab(m0+st.e)}</td>`
-       +`<td style="text-align:left">${st.d}${st.flag?`<br><span style="color:var(--fail);font-weight:600">&#9873; ${st.flag}</span>`:''}</td>`
+       +`<td style="text-align:left">${st.d}${st.standing?` <b style="color:var(--ink)">${veuNote()}</b>`:''}${st.flag?`<br><span style="color:var(--fail);font-weight:600">&#9873; ${st.flag}</span>`:''}</td>`
        +`<td style="text-align:left;color:var(--muted)">${st.b}</td></tr>`;
     });
   });
@@ -1552,7 +1558,7 @@ function render(){
       The licence and the ${'20+'}-week allocation queue run in parallel, so the two cannot be added together, but neither can be compressed below its own clock.
       Either the roadmap moves out, or the run-up is already further along than a standing start.</div>`:''}
     ${licenceTable(t0)}
-    <div class="foot">Two tracks in parallel, not in sequence — allocation will not wait on a licence, and the licence cannot be filed until a contract names the exporter of record. The dotted chain is the critical path. The licence, not the VEU, is the evidenced route: the Gulf approvals of 19 Nov 2025 (Humain, up to 35,000 GB300; G42) came as conditioned export licences, roughly six months after the May 2025 framework, and no data-centre VEU is known to have been granted since the authorization was created on 2 Oct 2024. The AI Diffusion Rule was rescinded on 13 May 2025 and no replacement rule has issued, so approvals run case by case. Statutory clocks are from EO 12981 and Supp. No. 9 to Part 748; everything else is a planning estimate, and the column above says which is which.</div>
+    <div class="foot">Two tracks in parallel, not in sequence — allocation will not wait on a licence, and the licence cannot be filed until a contract names the exporter of record. The dotted chain is the critical path. The licence is the evidenced route for the first shipment — the Gulf approvals of 19 Nov 2025 (Humain, up to 35,000 GB300; G42) came as conditioned export licences, roughly six months after the May 2025 framework — but it is a per-shipment instrument, and the standing authorization is what a fleet buying more than once actually runs on. No data-centre VEU is known to have been granted since the authorization was created on 2 Oct 2024, which is a risk to carry, not a reason to skip it. The AI Diffusion Rule was rescinded on 13 May 2025 and no replacement rule has issued, so approvals run case by case. Statutory clocks are from EO 12981 and Supp. No. 9 to Part 748; everything else is a planning estimate, and the column above says which is which.</div>
   </div>`;})():''}
 
   ${o.useTaas?`<div class="card">
