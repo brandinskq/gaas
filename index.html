@@ -576,11 +576,9 @@ const SCENARIOS=[
    // print "locked 10yr · 6-yr hold" on the tape and imply a term the deal never runs.
    // The 60-month tenor needs no change: it amortises from the tranche landing in month
    // 12 to month 72, which is the disposal month.
-   // netPct is a share of the node price, so the $500k is the node ALONE: left at 0.12
-   // the discount would have quietly cut the IB/RoCE fabric from $94,800 a node to
-   // $60,000, and switches, optics and cabling do not get cheaper because the GPU was
-   // negotiated. 0.1896 holds the fabric at the base case's dollar cost per node.
-   ov:{serverPrice:500000, coloPerKWMo:200, years:6, lockYears:6, netPct:0.1896},
+   // Network capex stays the model's 12% of the node price — the ratio is the planning
+   // assumption, so a cheaper node carries a proportionally cheaper fabric.
+   ov:{serverPrice:500000, coloPerKWMo:200, years:6, lockYears:6},
    road:[{k:'2026', m:12, g:10240}]},
 ];
 /* Every key any scenario overrides. Leaving one restores these to DEF, or a one-shot
