@@ -59,6 +59,14 @@
   .online-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--compute);
     box-shadow:0 0 6px var(--compute);animation:pulse 2.4s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  /* a scenario link opens a named deal shape, not the base case — say which, and offer
+     the way back, or someone reads a one-off purchase as the standing plan */
+  .scenpill{display:inline-flex;align-items:center;gap:9px;margin-left:12px;
+    font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.16em;
+    color:var(--power);text-transform:uppercase;padding:4px 9px;white-space:nowrap;
+    border:1px solid var(--power-dim);border-radius:2px;background:rgba(26,127,168,.07)}
+  .scenpill a{color:var(--power);text-decoration:none;font-size:13px;line-height:1;opacity:.6}
+  .scenpill a:hover{opacity:1}
   .tape .actions{display:flex;gap:8px}
   .btn{border:1px solid var(--line2);background:var(--raised);color:var(--muted);
     border-radius:2px;padding:8px 14px;font-size:11px;font-weight:600;cursor:pointer;
@@ -326,6 +334,7 @@
   <div class="brandwrap">
     <div class="wordmark">O&amp;R<span class="wm-sub">GPU as a Service BP</span></div>
     <span class="online-badge"><span class="dot"></span>MODEL · LIVE</span>
+    <span id="scenbadge"></span>
     <span class="spvwrap"><span class="spvl">SPV</span><input id="spvName" class="spvi" type="text"
       maxlength="60" placeholder="Name this SPV" oninput="setSpv(this.value)"></span>
   </div>
@@ -550,6 +559,54 @@ const PRODUCTS=[
    ov:{coloPerKWMo:350}}, // starting point only; applyGpuFacility hands it to the model
 ];
 let PROD='ownbuild';
+
+/* ═══════════════ scenarios ═══════════════ */
+/* A scenario is a whole deal shape rather than a tweak: it pins the GPU model, replaces
+   the build roadmap and overrides the fields the deal fixes. Each carries its own link,
+   so a case goes to a counterparty without a page of instructions on what to change.
+   It is applied AFTER applyGpuFacility, because that writes the very fields — node
+   price, hall rate, roadmap — a scenario exists to override. */
+const SCENARIOS=[
+  {id:'oneshot-2026', name:'One-shot 2026',
+   sub:'10,240 B300 bought once in 2026 · $500k a node · hall at $200/kW/mo',
+   gpu:'b300',
+   // One purchase, one life, one disposal. The hold ends when the fleet is sold at five
+   // years: an SPV holding nothing for four more years is an artefact, not a case.
+   // The lock follows the hold, as it does in the base case — leaving it at 10 would
+   // print "locked 10yr · 6-yr hold" on the tape and imply a term the deal never runs.
+   // The 60-month tenor needs no change: it amortises from the tranche landing in month
+   // 12 to month 72, which is the disposal month.
+   ov:{serverPrice:500000, coloPerKWMo:200, years:6, lockYears:6},
+   road:[{k:'2026', m:12, g:10240}]},
+];
+/* Every key any scenario overrides. Leaving one restores these to DEF, or a one-shot
+   case's 6-year hold follows you into the base plan — the same leak product presets had
+   before OV_KEYS. The model-owned fields (node price, hall rate, roadmap) are not
+   restored here: the caller re-enters applyGpuFacility, which rewrites all three. */
+const SCEN_KEYS=[...new Set(SCENARIOS.flatMap(x=>Object.keys(x.ov||{})))];
+let SCEN=(()=>{try{const q=new URLSearchParams(location.search).get('scenario');
+  return SCENARIOS.some(x=>x.id===q)?q:'';}catch(e){return '';}})();
+const scenario=()=>SCENARIOS.find(x=>x.id===SCEN)||null;
+/* State only — the caller renders. Called from applyGpuFacility, the single choke point
+   every entry path (load, product switch, model switch, reset) already goes through. */
+function applyScenario(){
+  const sc=scenario(); if(!sc)return;
+  if(sc.road)S.gpuRoadmap=sc.road.map(r=>({...r}));
+  Object.assign(S,sc.ov);
+}
+function setScenario(id){
+  const was=scenario();
+  SCEN=SCENARIOS.some(x=>x.id===id)?id:'';
+  if(was&&was.id!==SCEN)SCEN_KEYS.forEach(k=>{if(k in DEF)S[k]=DEF[k];});
+  try{const u=new URL(location.href);
+    if(SCEN)u.searchParams.set('scenario',SCEN); else u.searchParams.delete('scenario');
+    history.replaceState(null,'',u);}catch(e){}
+}
+function renderScenario(){
+  const el=document.getElementById('scenbadge'); if(!el)return;
+  const sc=scenario();
+  el.innerHTML=sc?`<span class="scenpill" title="${sc.sub}">${sc.name}<a href="?gpu=${sc.gpu}" title="Back to the base case">&times;</a></span>`:'';
+}
 let CUST='domestic'; // VAT customer type: 'domestic' (15%) | 'export' (0%, zero-rated services)
 const VAT_RATES={domestic:0.15, export:0};
 /* keys any product preset overrides — reset these to DEF on product switch so a prior preset (e.g. GPU-aaS util 75%) doesn't leak into the next */
@@ -1296,6 +1353,7 @@ function setCustomer(mode){
 /* ═══════════════ render ═══════════════ */
 function render(){
   syncToggles();          // the erosion control appears and disappears with the lock period
+  renderScenario();
   const o=compute(S,T);
   const vr=VAT_RATES[CUST]||0;
   const kpi=(l,v,s,c)=>`<div class="kpi"><div class="l">${l}</div><div class="v" style="color:${c||'var(--ink)'}">${v}</div>${s?`<div class="s">${s}</div>`:''}</div>`;
@@ -1621,6 +1679,10 @@ function renderModelBar(){
 }
 function setModel(id){
   const m=GPU_MODELS.find(x=>x.id===id); if(!m)return;
+  // A scenario fixes a card count and a node price against one model. 10,240 cards is
+  // 1,280 B300 nodes but 142.2 GB300 racks, and $500k is not a rack price — so changing
+  // model leaves the scenario rather than re-applying its numbers to the wrong hardware.
+  const sc=scenario(); if(sc&&sc.gpu&&sc.gpu!==id)setScenario('');
   GPU=id;
   try{localStorage.setItem('or.gpu',id);}catch(e){}
   try{const u=new URL(location.href); u.searchParams.set('gpu',id); history.replaceState(null,'',u);}catch(e){}
@@ -1646,6 +1708,7 @@ function applyGpuFacility(m){
   if(m.ps!=null)S.psPerGpu=m.ps;
   if(m.road)S.gpuRoadmap=m.road.map(r=>({...r}));
   S.pue=1.20;             // the hall this fleet rents runs PUE 1.20 either way
+  applyScenario();        // a named deal owns node price, hall rate and roadmap — it goes last
   applyChannelBlend();    // price and sold-through re-derive from the channel mix
   if(typeof syncRoadmap==='function')syncRoadmap();   // fleet = roadmap cards / cards per box
   if(typeof renderRoadmap==='function'){renderRoadmap();renderRoadChart();}
@@ -2079,6 +2142,7 @@ function syncInputs(){
   buildGroup('body_rev',F_REV);buildGroup('body_cost',F_COST);buildGroup('body_fin',F_FIN);
 }
 
+(()=>{const sc=scenario(); if(sc&&sc.gpu)GPU=sc.gpu;})(); // a scenario names its own hardware
 (()=>{const m=GPU_MODELS.find(x=>x.id===GPU); if(m)S.rental=blendRental(m,S.wsShare);})(); // seed blended rental
 renderProdBar();
 renderModelBar();
