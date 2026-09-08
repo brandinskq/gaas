@@ -658,29 +658,37 @@ const DC_GRADE_LIST=[
    tranche is what capex and revenue hang off, and month 1 is Jan 2026. */
 const LICENCE_LANES=[
   {name:'Export control', sub:'licence path', c:'#1a7fa8', steps:[
-    {n:'1', t:'KYC &amp; internal compliance prep', o:'O&amp;R', a:0, b:.19, crit:true,
-     d:'Ownership, ultimate control, key-personnel nationality exposure, and the supply-chain de-China account. Everything downstream is built on this file.',
+    {n:'1', t:'Compliance file &amp; KYC', o:'O&amp;R', s:0, e:2, crit:true,
+     d:'Ownership, ultimate control, key-personnel nationality exposure, supply-chain de-China account.',
+     b:'Preparation. No statutory clock — this is the one span you control.',
      flag:'The likeliest place for a problem to surface. Self-audit before anyone else reads it.'},
-    {n:'2', t:'VEU data-centre authorization', o:'O&amp;R &rarr; BIS', a:.19, b:.72, crit:true,
-     d:'Hall security, supply-chain controls, training and compliance records, filed with BIS and reviewed by the ERC — State, Defense, Energy, Commerce. Clearing it makes the hall a validated end user.',
-     flag:'Interagency review is the long pole. Everything downstream slips with it.'},
-    {n:'3', t:'BIS export licence — this shipment', o:'Exporter of record', a:.55, b:.86, crit:true,
-     d:'Filed by whoever ships — OEM, NVIDIA direct, or the distributor. O&amp;R is not the applicant: it supplies the end-user and end-use statements and the hall undertakings.',
+    {n:'2', t:'BIS export licence', o:'Exporter of record', s:2, e:8, crit:true,
+     d:'Filed by whoever ships — OEM, NVIDIA direct, or the distributor. O&amp;R supplies the end-user and end-use statements and the hall undertakings.',
+     b:'EO 12981: refer within 9 days, agency recommendations within 30, resolve or go to the President within 90. The clock stops whenever information is requested, which is why advanced computing runs 6&plus; months. Humain: May 2025 framework &rarr; 19 Nov 2025 authorization, about 6 months.',
      flag:'Watch how the end-user section is written, China ties above all.'},
+    {n:'3', t:'Data Center VEU', o:'O&amp;R &rarr; BIS / ERC', s:2, e:6, opt:true,
+     d:'Optional second track. Clearing it makes the hall a validated end user and removes the per-shipment licence.',
+     b:'Supp. No. 9 to Pt 748: ERC decides within 30 days of a complete application circulating, clock stopped on RFIs. On the books since 2 Oct 2024, but the AI Diffusion Rule that shaped it was rescinded 13 May 2025 and no data-centre VEU is known to have been granted.',
+     flag:'Do not put this on the critical path. Unproven — the Gulf approvals went by licence, not VEU.'},
   ]},
   {name:'Procurement', sub:'commercial', c:'#4f6b00', steps:[
-    {n:'A', t:'NVIDIA direct allocation', o:'O&amp;R &rarr; NVIDIA / OEM', a:0, b:.33,
-     d:'Capacity, schedule and price for the cards. Runs from day one — allocation is scarce and does not wait on BIS.'},
-    {n:'B', t:'OEM contract &amp; integration', o:'O&amp;R &rarr; OEM', a:.22, b:.53,
-     d:'Specs and delivery cadence, plus who is exporter of record, who files with BIS, and which documents O&amp;R produces. In the contract, not on a call.'},
+    {n:'A', t:'NVIDIA allocation', o:'O&amp;R &rarr; NVIDIA / OEM', s:0, e:3,
+     d:'Capacity, schedule and price. Runs from day one and does not wait on BIS.',
+     b:'Commercial negotiation. The queue, not the licence, is what sets the delivery date.'},
+    {n:'B', t:'OEM contract &amp; integration', o:'O&amp;R &rarr; OEM', s:1.5, e:4,
+     d:'Specs and cadence, plus who is exporter of record, who files, which documents O&amp;R produces.',
+     b:'Commercial. Must name the exporter of record — nothing downstream can be filed until it does.'},
   ]},
   {name:'Delivery', sub:'to first power', c:'#7c3aed', steps:[
-    {n:'', t:'Build slot &amp; manufacture', o:'OEM', a:.53, b:.86,
-     d:'Released by the contract, not the licence — kit can be built while the review runs. The one place time can be bought back.'},
-    {n:'', t:'Export, freight &amp; customs', o:'Exporter of record', a:.86, b:.94, crit:true,
-     d:'Starts on the licence grant and not before. This is the step the licence actually authorises.'},
-    {n:'', t:'Fit-out, install, burn-in', o:'O&amp;R + OEM', a:.90, b:1, crit:true,
-     d:'Hall handover, power, fabric, acceptance. Ends at first tranche live — where the capex lands and the revenue starts.'},
+    {n:'', t:'Manufacture &amp; allocation queue', o:'OEM', s:4, e:9,
+     d:'Released by the contract, not the licence — kit is built while the review runs.',
+     b:'HGX B300 early allocation quoted 20&plus; weeks as of Jul 2026; rack-scale and large orders run to the long end.'},
+    {n:'', t:'Export, freight &amp; customs', o:'Exporter of record', s:8, e:9.5, crit:true,
+     d:'Starts on the licence grant and not before. This is the step the licence authorises.',
+     b:'Gated by the grant above, not by the queue beside it.'},
+    {n:'', t:'Fit-out, install, burn-in', o:'O&amp;R + OEM', s:9.5, e:11.5, crit:true,
+     d:'Hall handover, power, fabric, acceptance. Ends at first power.',
+     b:'Planning estimate.'},
   ]},
 ];
 const F_REV=[
@@ -1216,25 +1224,27 @@ function firstTrancheM(){
 }
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const monLab=m=>{const i=Math.max(0,Math.round(m)-1); return MON[i%12]+" '"+String(2026+Math.floor(i/12)).slice(2);};
-/* Gantt of the run-up. Lanes are stacked, the critical chain is threaded through them
-   with an elbow connector, and the run ends on the tranche month the model already uses,
-   so the plan and the cash flow cannot drift apart. */
+/* The model counts from month 1 = Jan 2026, so the plan is drawn forward from wherever
+   today actually falls on that axis. Drawing it from month 1 would show a run-up that
+   has already elapsed. */
+function nowM(){const d=new Date(); return (d.getFullYear()-2026)*12+d.getMonth()+1;}
+const planEndM=()=>nowM()+Math.max(...LICENCE_LANES.flatMap(l=>l.steps.map(x=>x.e)));
+/* Gantt of the run-up, drawn on real months against two markers: the month the build
+   roadmap assumes first power, and the earliest the plan itself can deliver it. The gap
+   between them is the point of the chart. */
 function licenceChart(t0){
-  const W=920, LX=250, BR=W-70, span=BR-LX;
+  const W=920, LX=250, BR=W-96, span=BR-LX;
   const rowH=23, laneH=18, top=30;
+  const m0=nowM(), m1=planEndM(), lo=Math.min(m0,t0), hi=Math.max(m1,t0);
   const nRows=LICENCE_LANES.reduce((t,l)=>t+l.steps.length,0);
-  const H=top+LICENCE_LANES.length*laneH+nRows*rowH+16;
-  const X=f=>LX+f*span, M=f=>1+f*(t0-1);
-  let r='', y=top, rowY={}, idx=0, crit=[];
+  const H=top+LICENCE_LANES.length*laneH+nRows*rowH+18;
+  const X=m=>LX+((m-lo)/Math.max(1e-6,hi-lo))*span;
+  let r='', y=top, idx=0, crit=[];
 
-  // axis: a tick each quarter of the run-up, plus the tranche month itself
-  const ticks=[];
-  for(let m=1;m<=t0;m+=Math.max(1,Math.round((t0-1)/4)))ticks.push(m);
-  if(ticks[ticks.length-1]!==t0)ticks.push(t0);
-  if(ticks.length>2&&t0-ticks[ticks.length-2]<Math.max(1,(t0-1)/6))ticks.splice(ticks.length-2,1);
-  ticks.forEach(m=>{const x=X((m-1)/Math.max(1,t0-1));
-    r+=`<line x1="${x.toFixed(1)}" y1="${top-8}" x2="${x.toFixed(1)}" y2="${H-14}" stroke="#e4e7ec" stroke-width="1"/>`;
-    r+=`<text x="${x.toFixed(1)}" y="${top-13}" fill="#6f7885" font-size="9" font-family="ui-monospace,monospace" text-anchor="${m===t0?'end':'middle'}">${monLab(m)}</text>`;});
+  const step=Math.max(1,Math.round((hi-lo)/5));
+  for(let m=lo;m<=hi;m+=step){const x=X(m);
+    r+=`<line x1="${x.toFixed(1)}" y1="${top-8}" x2="${x.toFixed(1)}" y2="${H-14}" stroke="#e4e7ec"/>`;
+    r+=`<text x="${x.toFixed(1)}" y="${top-13}" fill="#6f7885" font-size="9" font-family="ui-monospace,monospace" text-anchor="middle">${monLab(m)}</text>`;}
 
   LICENCE_LANES.forEach(lane=>{
     r+=`<text x="0" y="${y+11}" fill="${lane.c}" font-size="9" font-weight="700" font-family="ui-monospace,monospace" letter-spacing="1.4">${lane.name.toUpperCase()}</text>`;
@@ -1242,44 +1252,47 @@ function licenceChart(t0){
     r+=`<line x1="0" y1="${y+16}" x2="${W}" y2="${y+16}" stroke="#e4e7ec"/>`;
     y+=laneH;
     lane.steps.forEach(st=>{
-      const x0=X(st.a), x1=X(st.b), cy=y+rowH/2;
-      rowY[idx]=cy; if(st.crit)crit.push([x0,x1,cy]); idx++;
-      if(st.n)r+=`<rect x="0" y="${cy-6.5}" width="13" height="13" rx="2" fill="${lane.c}"/>`
-             +`<text x="6.5" y="${cy+4}" fill="#ffffff" font-size="9" font-weight="700" font-family="ui-monospace,monospace" text-anchor="middle">${st.n}</text>`;
-      r+=`<text x="${st.n?18:0}" y="${cy-0.5}" fill="#111318" font-size="10" font-weight="600">${st.t}</text>`;
+      const x0=X(m0+st.s), x1=X(m0+st.e), cy=y+rowH/2;
+      if(st.crit)crit.push([x0,x1,cy]); idx++;
+      if(st.n)r+=`<rect x="0" y="${cy-6.5}" width="13" height="13" rx="2" fill="${st.opt?'#ffffff':lane.c}" stroke="${lane.c}"/>`
+             +`<text x="6.5" y="${cy+4}" fill="${st.opt?lane.c:'#ffffff'}" font-size="9" font-weight="700" font-family="ui-monospace,monospace" text-anchor="middle">${st.n}</text>`;
+      r+=`<text x="${st.n?18:0}" y="${cy-0.5}" fill="#111318" font-size="10" font-weight="600">${st.t}${st.opt?' <tspan fill="#6f7885" font-weight="400">· optional</tspan>':''}</text>`;
       r+=`<text x="${st.n?18:0}" y="${cy+9.5}" fill="#6f7885" font-size="8.5" font-family="ui-monospace,monospace">${st.o}</text>`;
-      r+=`<rect x="${x0.toFixed(1)}" y="${cy-6}" width="${Math.max(3,x1-x0).toFixed(1)}" height="12" rx="3" fill="${lane.c}" opacity="${st.crit?'1':'.62'}"/>`;
-      r+=`<text x="${(x1+5).toFixed(1)}" y="${cy+3.5}" fill="#6f7885" font-size="8" font-family="ui-monospace,monospace">${monLab(M(st.a))}&#8211;${monLab(M(st.b))}</text>`;
+      r+=st.opt
+        ? `<rect x="${x0.toFixed(1)}" y="${cy-6}" width="${Math.max(3,x1-x0).toFixed(1)}" height="12" rx="3" fill="none" stroke="${lane.c}" stroke-dasharray="3 2"/>`
+        : `<rect x="${x0.toFixed(1)}" y="${cy-6}" width="${Math.max(3,x1-x0).toFixed(1)}" height="12" rx="3" fill="${lane.c}" opacity="${st.crit?'1':'.6'}"/>`;
+      r+=`<text x="${(x1+5).toFixed(1)}" y="${cy+3.5}" fill="#6f7885" font-size="8" font-family="ui-monospace,monospace">${(st.e-st.s).toFixed(1).replace('.0','')}mo</text>`;
       y+=rowH;
     });
   });
-  // the critical chain, threaded end-to-start through whichever lane the next link sits in
   for(let i=1;i<crit.length;i++){
     const [,pe,py]=crit[i-1], [ns,,ny]=crit[i], gy=py+rowH/2-1;
     r+=`<path d="M${pe.toFixed(1)} ${py} H${(pe+8).toFixed(1)} V${gy.toFixed(1)} H${ns.toFixed(1)} V${(ny-4).toFixed(1)}" fill="none" stroke="#ccd2db" stroke-width="1" stroke-dasharray="2 2"/>`;
     r+=`<path d="M${(ns-2.6).toFixed(1)} ${(ny-4).toFixed(1)} L${ns.toFixed(1)} ${ny} L${(ns+2.6).toFixed(1)} ${(ny-4).toFixed(1)} Z" fill="#ccd2db"/>`;
   }
-  // the milestone the whole run-up is aimed at
-  r+=`<line x1="${BR}" y1="${top-8}" x2="${BR}" y2="${H-14}" stroke="#7c3aed" stroke-width="1" stroke-dasharray="3 3"/>`;
-  r+=`<path d="M${BR} ${H-20} l5 5 l-5 5 l-5 -5 Z" fill="#7c3aed"/>`;
-  r+=`<text x="${BR+8}" y="${H-11}" fill="#7c3aed" font-size="8.5" font-weight="700" font-family="ui-monospace,monospace">LIVE</text>`;
+  const mark=(m,c,lab)=>{const x=X(m);
+    return `<line x1="${x.toFixed(1)}" y1="${top-8}" x2="${x.toFixed(1)}" y2="${H-16}" stroke="${c}" stroke-width="1.2" stroke-dasharray="3 3"/>`
+      +`<path d="M${x.toFixed(1)} ${H-22} l5 5 l-5 5 l-5 -5 Z" fill="${c}"/>`
+      +`<text x="${(x+8).toFixed(1)}" y="${(H-13).toFixed(1)}" fill="${c}" font-size="8.5" font-weight="700" font-family="ui-monospace,monospace">${lab}</text>`;};
+  r+=mark(t0,'#d92d3f','MODEL');
+  r+=mark(m1,'#7c3aed','EARLIEST');
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">${r}</svg>`;
 }
 function licenceTable(t0){
-  const M=f=>1+f*(t0-1);
+  const m0=nowM();
   let b='';
   LICENCE_LANES.forEach(lane=>{
     b+=`<tr><td colspan="4" style="text-align:left;padding-top:9px;color:${lane.c};font-weight:700;letter-spacing:.1em;font-size:8.5px">${lane.name.toUpperCase()} &#183; ${lane.sub}</td></tr>`;
     lane.steps.forEach(st=>{
-      b+=`<tr><td style="text-align:left;white-space:nowrap;color:var(--ink);font-weight:600">${st.n?st.n+' &#183; ':''}${st.t}</td>`
-       +`<td style="text-align:left;white-space:nowrap">${st.o}</td>`
-       +`<td style="text-align:left;white-space:nowrap">${monLab(M(st.a))} &#8211; ${monLab(M(st.b))}</td>`
-       +`<td style="text-align:left">${st.d}${st.flag?`<br><span style="color:var(--fail);font-weight:600">&#9873; ${st.flag}</span>`:''}</td></tr>`;
+      b+=`<tr><td style="text-align:left;color:var(--ink);font-weight:600">${st.n?st.n+' &#183; ':''}${st.t}${st.opt?' <span style="color:var(--dim);font-weight:400">· optional</span>':''}<br><span style="color:var(--dim);font-weight:400">${st.o}</span></td>`
+       +`<td style="text-align:left;white-space:nowrap">${monLab(m0+st.s)} &#8211; ${monLab(m0+st.e)}</td>`
+       +`<td style="text-align:left">${st.d}${st.flag?`<br><span style="color:var(--fail);font-weight:600">&#9873; ${st.flag}</span>`:''}</td>`
+       +`<td style="text-align:left;color:var(--muted)">${st.b}</td></tr>`;
     });
   });
   return `<table class="modet" style="margin-top:12px"><thead><tr>`
-    +`<th style="text-align:left;width:23%">Step</th><th style="text-align:left;width:15%">Owner</th>`
-    +`<th style="text-align:left;width:14%">Window</th><th style="text-align:left">Scope</th>`
+    +`<th style="text-align:left;width:19%">Step / owner</th><th style="text-align:left;width:13%">Window</th>`
+    +`<th style="text-align:left;width:31%">Scope</th><th style="text-align:left">Where the duration comes from</th>`
     +`</tr></thead><tbody>${b}</tbody></table>`;
 }
 function revChart(mo){
@@ -1530,11 +1543,16 @@ function render(){
     ${capexBar(o)}
   </div>
 
-  ${(o.useGpu&&firstTrancheM()>2)?(()=>{const t0=firstTrancheM();return `<div class="card">
-    <div class="h">Licence &amp; procurement roadmap — ${(S.servers*S.gpus).toLocaleString()} cards to first power, ${monLab(t0)}</div>
+  ${o.useGpu?(()=>{const t0=firstTrancheM()||nowM(), m1=planEndM(), slip=m1-t0;return `<div class="card">
+    <div class="h">Licence &amp; procurement roadmap — ${(S.servers*S.gpus).toLocaleString()} cards to first power</div>
     ${licenceChart(t0)}
+    ${slip>0?`<div style="margin:10px 0 2px;padding:9px 12px;border:1px solid var(--fail);border-radius:3px;background:rgba(217,45,63,.05);font-size:12px;line-height:1.55">
+      <b style="color:var(--fail)">The build roadmap is ${slip.toFixed(0)} months ahead of what this path can deliver.</b>
+      It puts first power in <b>${monLab(t0)}</b>; from a standing start today the critical chain — compliance file, export licence, freight, install — does not finish before <b>${monLab(m1)}</b>.
+      The licence and the ${'20+'}-week allocation queue run in parallel, so the two cannot be added together, but neither can be compressed below its own clock.
+      Either the roadmap moves out, or the run-up is already further along than a standing start.</div>`:''}
     ${licenceTable(t0)}
-    <div class="foot">Two tracks in parallel, not in sequence — allocation will not wait on a licence, and the licence cannot be filed without a contract to name in it. The dotted chain is the critical path, ${monLab(1)} to ${monLab(t0)}, against the ${t0}-month run-up the build roadmap already assumes: a slip in the VEU review moves the first revenue month, not just the paperwork. Durations are planning estimates, not quoted agency turnarounds.</div>
+    <div class="foot">Two tracks in parallel, not in sequence — allocation will not wait on a licence, and the licence cannot be filed until a contract names the exporter of record. The dotted chain is the critical path. The licence, not the VEU, is the evidenced route: the Gulf approvals of 19 Nov 2025 (Humain, up to 35,000 GB300; G42) came as conditioned export licences, roughly six months after the May 2025 framework, and no data-centre VEU is known to have been granted since the authorization was created on 2 Oct 2024. The AI Diffusion Rule was rescinded on 13 May 2025 and no replacement rule has issued, so approvals run case by case. Statutory clocks are from EO 12981 and Supp. No. 9 to Part 748; everything else is a planning estimate, and the column above says which is which.</div>
   </div>`;})():''}
 
   ${o.useTaas?`<div class="card">
