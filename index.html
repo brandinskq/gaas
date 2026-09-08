@@ -645,6 +645,40 @@ const DC_GRADE_LIST=[
   {k:'D',name:'AI liquid-cooled',sub:'frontier AI factory · ~250 kW/rack'}
 ];
 
+/* ═══════════════ licence & procurement plan ═══════════════ */
+/* The path from a standing start to the first card drawing power. The two tracks run in
+   parallel by design and not in sequence: allocation is the scarce thing and will not
+   wait on an export licence, while the licence cannot be filed until there is a shipment
+   and a contract to name in it. Spans are fractions of the run-up rather than fixed
+   months, so the plan re-scales if the first tranche in the build roadmap moves — that
+   tranche is what capex and revenue hang off, and month 1 is Jan 2026. */
+const LICENCE_LANES=[
+  {name:'Export control', sub:'licence path', c:'#1a7fa8', steps:[
+    {n:'1', t:'KYC &amp; internal compliance prep', o:'O&amp;R', a:0, b:.19, crit:true,
+     d:'Ownership, ultimate control, key-personnel nationality exposure, and the supply-chain de-China account. Everything downstream is built on this file.',
+     flag:'The likeliest place for a problem to surface. Self-audit before anyone else reads it.'},
+    {n:'2', t:'VEU data-centre authorization', o:'O&amp;R &rarr; BIS', a:.19, b:.72, crit:true,
+     d:'Hall security, supply-chain controls, training and compliance records, filed with BIS and reviewed by the ERC — State, Defense, Energy, Commerce. Clearing it makes the hall a validated end user.',
+     flag:'Interagency review is the long pole. Everything downstream slips with it.'},
+    {n:'3', t:'BIS export licence — this shipment', o:'Exporter of record', a:.55, b:.86, crit:true,
+     d:'Filed by whoever ships — OEM, NVIDIA direct, or the distributor. O&amp;R is not the applicant: it supplies the end-user and end-use statements and the hall undertakings.',
+     flag:'Watch how the end-user section is written, China ties above all.'},
+  ]},
+  {name:'Procurement', sub:'commercial', c:'#4f6b00', steps:[
+    {n:'A', t:'NVIDIA direct allocation', o:'O&amp;R &rarr; NVIDIA / OEM', a:0, b:.33,
+     d:'Capacity, schedule and price for the cards. Runs from day one — allocation is scarce and does not wait on BIS.'},
+    {n:'B', t:'OEM contract &amp; integration', o:'O&amp;R &rarr; OEM', a:.22, b:.53,
+     d:'Specs and delivery cadence, plus who is exporter of record, who files with BIS, and which documents O&amp;R produces. In the contract, not on a call.'},
+  ]},
+  {name:'Delivery', sub:'to first power', c:'#7c3aed', steps:[
+    {n:'', t:'Build slot &amp; manufacture', o:'OEM', a:.53, b:.86,
+     d:'Released by the contract, not the licence — kit can be built while the review runs. The one place time can be bought back.'},
+    {n:'', t:'Export, freight &amp; customs', o:'Exporter of record', a:.86, b:.94, crit:true,
+     d:'Starts on the licence grant and not before. This is the step the licence actually authorises.'},
+    {n:'', t:'Fit-out, install, burn-in', o:'O&amp;R + OEM', a:.90, b:1, crit:true,
+     d:'Hall handover, power, fabric, acceptance. Ends at first tranche live — where the capex lands and the revenue starts.'},
+  ]},
+];
 const F_REV=[
   {k:'gpus',gpuOnly:true,label:'GPUs per server',unit:'#',step:1,info:'GPUs per box. B300 nodes hold 8, GB300 NVL72 racks hold 72.'},
   {k:'deployMonths',gpuOnly:true,roadmapDead:true,label:'Deployment period',unit:'months',step:1,tog:'phase',info:'Months to install the fleet. Ignored while a roadmap sets the dates.'},
@@ -1170,6 +1204,80 @@ function capexBar(o){
   r+=`<text x="${pad}" y="${y+barH+14}" fill="#5a6270" font-size="10" font-family="ui-monospace,monospace">${o.useGpu?`servers ${money(o.servCapex)}${o.netCapex>0?` · network ${money(o.netCapex)}`:''}${o.useFac?' · ':''}`:''}${o.useFac?`facility ${money(o.facTotal)} (${o.mwIT.toFixed(2)} MW IT) · development ${money(o.psTotal)}`:''}</text>`;
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">${r}</svg>`;
 }
+/* Month the first non-replacement tranche goes live — the date the whole run-up is
+   working back from. Replacement tranches re-buy an existing cohort and start no clock. */
+function firstTrancheM(){
+  const r=(S.gpuRoadmap||[]).filter(x=>!x.r).map(x=>Math.round(x.m||0)).filter(x=>x>0);
+  return r.length?Math.min(...r):0;
+}
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const monLab=m=>{const i=Math.max(0,Math.round(m)-1); return MON[i%12]+" '"+String(2026+Math.floor(i/12)).slice(2);};
+/* Gantt of the run-up. Lanes are stacked, the critical chain is threaded through them
+   with an elbow connector, and the run ends on the tranche month the model already uses,
+   so the plan and the cash flow cannot drift apart. */
+function licenceChart(t0){
+  const W=920, LX=250, BR=W-70, span=BR-LX;
+  const rowH=23, laneH=18, top=30;
+  const nRows=LICENCE_LANES.reduce((t,l)=>t+l.steps.length,0);
+  const H=top+LICENCE_LANES.length*laneH+nRows*rowH+16;
+  const X=f=>LX+f*span, M=f=>1+f*(t0-1);
+  let r='', y=top, rowY={}, idx=0, crit=[];
+
+  // axis: a tick each quarter of the run-up, plus the tranche month itself
+  const ticks=[];
+  for(let m=1;m<=t0;m+=Math.max(1,Math.round((t0-1)/4)))ticks.push(m);
+  if(ticks[ticks.length-1]!==t0)ticks.push(t0);
+  if(ticks.length>2&&t0-ticks[ticks.length-2]<Math.max(1,(t0-1)/6))ticks.splice(ticks.length-2,1);
+  ticks.forEach(m=>{const x=X((m-1)/Math.max(1,t0-1));
+    r+=`<line x1="${x.toFixed(1)}" y1="${top-8}" x2="${x.toFixed(1)}" y2="${H-14}" stroke="#e4e7ec" stroke-width="1"/>`;
+    r+=`<text x="${x.toFixed(1)}" y="${top-13}" fill="#6f7885" font-size="9" font-family="ui-monospace,monospace" text-anchor="${m===t0?'end':'middle'}">${monLab(m)}</text>`;});
+
+  LICENCE_LANES.forEach(lane=>{
+    r+=`<text x="0" y="${y+11}" fill="${lane.c}" font-size="9" font-weight="700" font-family="ui-monospace,monospace" letter-spacing="1.4">${lane.name.toUpperCase()}</text>`;
+    r+=`<text x="${LX-6}" y="${y+11}" fill="#6f7885" font-size="8.5" font-family="ui-monospace,monospace" text-anchor="end">${lane.sub}</text>`;
+    r+=`<line x1="0" y1="${y+16}" x2="${W}" y2="${y+16}" stroke="#e4e7ec"/>`;
+    y+=laneH;
+    lane.steps.forEach(st=>{
+      const x0=X(st.a), x1=X(st.b), cy=y+rowH/2;
+      rowY[idx]=cy; if(st.crit)crit.push([x0,x1,cy]); idx++;
+      if(st.n)r+=`<rect x="0" y="${cy-6.5}" width="13" height="13" rx="2" fill="${lane.c}"/>`
+             +`<text x="6.5" y="${cy+4}" fill="#ffffff" font-size="9" font-weight="700" font-family="ui-monospace,monospace" text-anchor="middle">${st.n}</text>`;
+      r+=`<text x="${st.n?18:0}" y="${cy-0.5}" fill="#111318" font-size="10" font-weight="600">${st.t}</text>`;
+      r+=`<text x="${st.n?18:0}" y="${cy+9.5}" fill="#6f7885" font-size="8.5" font-family="ui-monospace,monospace">${st.o}</text>`;
+      r+=`<rect x="${x0.toFixed(1)}" y="${cy-6}" width="${Math.max(3,x1-x0).toFixed(1)}" height="12" rx="3" fill="${lane.c}" opacity="${st.crit?'1':'.62'}"/>`;
+      r+=`<text x="${(x1+5).toFixed(1)}" y="${cy+3.5}" fill="#6f7885" font-size="8" font-family="ui-monospace,monospace">${monLab(M(st.a))}&#8211;${monLab(M(st.b))}</text>`;
+      y+=rowH;
+    });
+  });
+  // the critical chain, threaded end-to-start through whichever lane the next link sits in
+  for(let i=1;i<crit.length;i++){
+    const [,pe,py]=crit[i-1], [ns,,ny]=crit[i], gy=py+rowH/2-1;
+    r+=`<path d="M${pe.toFixed(1)} ${py} H${(pe+8).toFixed(1)} V${gy.toFixed(1)} H${ns.toFixed(1)} V${(ny-4).toFixed(1)}" fill="none" stroke="#ccd2db" stroke-width="1" stroke-dasharray="2 2"/>`;
+    r+=`<path d="M${(ns-2.6).toFixed(1)} ${(ny-4).toFixed(1)} L${ns.toFixed(1)} ${ny} L${(ns+2.6).toFixed(1)} ${(ny-4).toFixed(1)} Z" fill="#ccd2db"/>`;
+  }
+  // the milestone the whole run-up is aimed at
+  r+=`<line x1="${BR}" y1="${top-8}" x2="${BR}" y2="${H-14}" stroke="#7c3aed" stroke-width="1" stroke-dasharray="3 3"/>`;
+  r+=`<path d="M${BR} ${H-20} l5 5 l-5 5 l-5 -5 Z" fill="#7c3aed"/>`;
+  r+=`<text x="${BR+8}" y="${H-11}" fill="#7c3aed" font-size="8.5" font-weight="700" font-family="ui-monospace,monospace">LIVE</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">${r}</svg>`;
+}
+function licenceTable(t0){
+  const M=f=>1+f*(t0-1);
+  let b='';
+  LICENCE_LANES.forEach(lane=>{
+    b+=`<tr><td colspan="4" style="text-align:left;padding-top:9px;color:${lane.c};font-weight:700;letter-spacing:.1em;font-size:8.5px">${lane.name.toUpperCase()} &#183; ${lane.sub}</td></tr>`;
+    lane.steps.forEach(st=>{
+      b+=`<tr><td style="text-align:left;white-space:nowrap;color:var(--ink);font-weight:600">${st.n?st.n+' &#183; ':''}${st.t}</td>`
+       +`<td style="text-align:left;white-space:nowrap">${st.o}</td>`
+       +`<td style="text-align:left;white-space:nowrap">${monLab(M(st.a))} &#8211; ${monLab(M(st.b))}</td>`
+       +`<td style="text-align:left">${st.d}${st.flag?`<br><span style="color:var(--fail);font-weight:600">&#9873; ${st.flag}</span>`:''}</td></tr>`;
+    });
+  });
+  return `<table class="modet" style="margin-top:12px"><thead><tr>`
+    +`<th style="text-align:left;width:23%">Step</th><th style="text-align:left;width:15%">Owner</th>`
+    +`<th style="text-align:left;width:14%">Window</th><th style="text-align:left">Scope</th>`
+    +`</tr></thead><tbody>${b}</tbody></table>`;
+}
 function revChart(mo){
   const W=640,H=200,pad=36;
   const N=mo.length;
@@ -1417,6 +1525,13 @@ function render(){
     <div class="h">Capital stack — ${money(o.totalCapex)}</div>
     ${capexBar(o)}
   </div>
+
+  ${(o.useGpu&&firstTrancheM()>2)?(()=>{const t0=firstTrancheM();return `<div class="card">
+    <div class="h">Licence &amp; procurement roadmap — ${(S.servers*S.gpus).toLocaleString()} cards to first power, ${monLab(t0)}</div>
+    ${licenceChart(t0)}
+    ${licenceTable(t0)}
+    <div class="foot">Two tracks in parallel, not in sequence — allocation will not wait on a licence, and the licence cannot be filed without a contract to name in it. The dotted chain is the critical path, ${monLab(1)} to ${monLab(t0)}, against the ${t0}-month run-up the build roadmap already assumes: a slip in the VEU review moves the first revenue month, not just the paperwork. Durations are planning estimates, not quoted agency turnarounds.</div>
+  </div>`;})():''}
 
   ${o.useTaas?`<div class="card">
     <div class="h">Revenue by modality — blended $${taasBlended(S).rental.toFixed(2)}/GPU-hr</div>
