@@ -525,7 +525,7 @@ let S={...DEF, modes:DEF.modes.map(m=>({...m})), roadmap:DEF.roadmap.map(r=>({..
 // ws = wholesale/spot floor $/GPU-hr; od = on-demand retail $/GPU-hr (lowest of AWS/Azure/OCI).
 // Effective rental blends the two by the wholesale sales share (default 65% contract / 35% on-demand).
 const GPU_MODELS=[
-  {id:'b300',  name:'B300',        gpus:8,  power:14.0, cost:790000,  liquid:false, unit:'node', ws:5.06,  od:16.10, net:0.12, colo:350, ps:4687.5,
+  {id:'b300',  name:'B300',        gpus:8,  power:14.0, cost:790000,  liquid:false, unit:'node', ws:4.50,  od:12.00, net:0.12, colo:350, ps:4687.5,
    road:[
     {k:'2026',m:12,g:1024},{k:'2027 H1',m:18,g:2048},{k:'2027 H2',m:24,g:2024},
     {k:'2028 H1',m:30,g:5144},{k:'2028 H2',m:36,g:10240},{k:'2029 H1',m:42,g:10240},
