@@ -567,8 +567,10 @@ let PROD='ownbuild';
    It is applied AFTER applyGpuFacility, because that writes the very fields — node
    price, hall rate, roadmap — a scenario exists to override. */
 const SCENARIOS=[
-  {id:'oneshot-2026', name:'One-shot 2026',
-   sub:'10,240 B300 bought once in 2026 · $500k a node · hall at $200/kW/mo',
+  // The id is the URL and stays put so shared links keep working; the label does not
+  // name a year, because the cards are not committed to one.
+  {id:'oneshot-2026', name:'One-shot 10k',
+   sub:'10,240 B300 bought in a single tranche · $500k a node · hall at $200/kW/mo',
    gpu:'b300',
    // One purchase, one life, one disposal. The hold ends when the fleet is sold at five
    // years: an SPV holding nothing for four more years is an artefact, not a case.
@@ -579,7 +581,11 @@ const SCENARIOS=[
    // Network capex stays the model's 12% of the node price — the ratio is the planning
    // assumption, so a cheaper node carries a proportionally cheaper fabric.
    ov:{serverPrice:500000, coloPerKWMo:200, years:6, lockYears:6},
-   road:[{k:'2026', m:12, g:10240}]},
+   // The cards are not committed to a year, so the tranche is labelled by month and
+   // `undated` strips the calendar out of every caption derived from it. The month
+   // still drives capex and revenue; it just no longer claims to be Dec 2026.
+   undated:true,
+   road:[{k:'Month 12', m:12, g:10240}]},
 ];
 /* Every key any scenario overrides. Leaving one restores these to DEF, or a one-shot
    case's 6-year hold follows you into the base plan — the same leak product presets had
@@ -2086,28 +2092,32 @@ function renderRoadChart(){
   const tot=roadTotal();
   const buildRows=spec.rows.filter(r=>!r.r);
   const refRows=spec.rows.filter(r=>r.r);
-  const lastYr=buildRows.length?String(buildRows[buildRows.length-1].k).slice(0,4):'';
+  const asYear=r=>{const y=String(r?r.k:'').slice(0,4); return /^\d{4}$/.test(y)?y:`month ${r?r.m:0}`;};
+  const lastYr=buildRows.length?asYear(buildRows[buildRows.length-1]):'';
   const note=isGpuProd()
     ? `<b class="num" style="color:var(--ink)">${tot.toLocaleString()} GPUs</b> by ${lastYr} · `+
       `${Math.round(tot/Math.max(1,S.gpus)).toLocaleString()} nodes · `+
       `${(tot/Math.max(1,S.gpus)*(S.powerKW+(S.netPowerKW||0))/1000).toFixed(1)} MW IT drawn from the hall`+
-      (refRows.length?` · held flat to ${String(refRows[refRows.length-1].k).slice(0,4)} by ${refRows.length} replacement tranches`:'')
+      (refRows.length?` · held flat to ${asYear(refRows[refRows.length-1])} by ${refRows.length} replacement tranches`:'')
     : `<b class="num" style="color:var(--ink)">${tot} MW IT</b> by ${lastYr} · ${Math.round(roadGrossMW())} MW campus power at ${Math.round((S.usableIT||1)*100)}% usable · stacked by capacity type`;
   bar.innerHTML=`<div class="roadhead"><span class="mlabel">Build roadmap</span>`+
     `<span class="roadnote">${note}</span></div>`+
     roadChart(Math.max(260, Math.round(bar.clientWidth||1000)));
 }
+/* An undated scenario counts months from programme start; the base plan is a dated
+   build-out and keeps its calendar. */
+const monthZero=()=>scenario()?.undated?'Month 1 = programme start.':'Month 1 = Jan 2026.';
 function roadFoot(){
   const c=roadSpec(), last=c.rows.filter(r=>!r.r).reduce((t,r)=>Math.max(t,r.m||0),0);
   if(isGpuProd()){
     const g=roadTotal(), nodes=Math.round(g/Math.max(1,S.gpus));
     const ref=c.rows.filter(r=>r.r);
     return `${g.toLocaleString()} GPUs by month ${last} — ${nodes.toLocaleString()} nodes, `+
-      `${(nodes*(S.powerKW+(S.netPowerKW||0))/1000).toFixed(1)} MW IT. Month 1 = Jan 2026.`+
+      `${(nodes*(S.powerKW+(S.netPowerKW||0))/1000).toFixed(1)} MW IT. ${monthZero()}`+
       (ref.length?` Rows marked ↻ re-buy a cohort the month it retires at 5 years, holding the fleet flat rather than letting it wind down; they add capex and no capacity, and are funded from operating cash.`:'');
   }
   return `MW below is leasable IT load: ${roadITMW()} MW IT by month ${last}, `+
-    `drawing ${Math.round(roadGrossMW())} MW of campus power. Month 1 = Jan 2026.`;
+    `drawing ${Math.round(roadGrossMW())} MW of campus power. ${monthZero()}`;
 }
 function setRoadMW(i,v){
   let x=parseFloat(v); if(isNaN(x)||x<0)x=0;
