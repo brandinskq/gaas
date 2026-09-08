@@ -977,8 +977,14 @@ function compute(p,tog){
     const facGpuPerServer=useFac?(pkEff/1000)*p.facilityPerMW:0;
     const psGpuPerServer=useFac?(pkEff/1000)*(p.psPerMW||0):0;
     const rentPerServerMo=useFac?(pkEff/1000*p.siteRentPerMW/12):(pkEff*p.coloPerKWMo);
-    cb={depr:p.serverPrice*(1-p.residualPct)/(p.years*12)/ssBill,
-            net:(p.serverPrice*p.netPct*(1-p.netResidualPct)/(p.years*12)+p.transitMo/Math.max(1,target))/ssBill,
+    // Kit writes down over its own life, not over the hold. A tranche is bought, run for
+    // gpuLifeYears, sold at its residual and replaced, which is exactly what deprS/deprN
+    // charge above. Amortising here over p.years instead showed half the depreciation the
+    // P&L was booking — a 5-year machine spread across a 10-year hold — and every other
+    // line in the table inherited the inflated share that left behind.
+    const deprM=groad?lifeM:p.years*12;
+    cb={depr:p.serverPrice*(1-p.residualPct)/deprM/ssBill,
+            net:(p.serverPrice*p.netPct*(1-p.netResidualPct)/deprM+p.transitMo/Math.max(1,target))/ssBill,
             facility:useFac?(facGpuPerServer/(p.facilityLife*12))/ssBill:0,
             dev:((useFac?psGpuPerServer/(p.facilityLife*12):0)
                 +gpus*(p.psPerGpu||0)/((p.gpuLifeYears||p.years)*12))/ssBill,
