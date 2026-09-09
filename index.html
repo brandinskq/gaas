@@ -59,14 +59,6 @@
   .online-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--compute);
     box-shadow:0 0 6px var(--compute);animation:pulse 2.4s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-  /* a scenario link opens a named deal shape, not the base case — say which, and offer
-     the way back, or someone reads a one-off purchase as the standing plan */
-  .scenpill{display:inline-flex;align-items:center;gap:9px;margin-left:12px;
-    font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.16em;
-    color:var(--power);text-transform:uppercase;padding:4px 9px;white-space:nowrap;
-    border:1px solid var(--power-dim);border-radius:2px;background:rgba(26,127,168,.07)}
-  .scenpill a{color:var(--power);text-decoration:none;font-size:13px;line-height:1;opacity:.6}
-  .scenpill a:hover{opacity:1}
   .tape .actions{display:flex;gap:8px}
   .btn{border:1px solid var(--line2);background:var(--raised);color:var(--muted);
     border-radius:2px;padding:8px 14px;font-size:11px;font-weight:600;cursor:pointer;
@@ -334,7 +326,6 @@
   <div class="brandwrap">
     <div class="wordmark">O&amp;R<span class="wm-sub">GPU as a Service BP</span></div>
     <span class="online-badge"><span class="dot"></span>MODEL · LIVE</span>
-    <span id="scenbadge"></span>
     <span class="spvwrap"><span class="spvl">SPV</span><input id="spvName" class="spvi" type="text"
       maxlength="60" placeholder="Name this SPV" oninput="setSpv(this.value)"></span>
   </div>
@@ -347,6 +338,7 @@
 </div>
 
 <div class="prodbar" id="prodbar"></div>
+<div class="modelbar" id="scenbar"></div>
 <div class="modelbar" id="modelbar"></div>
 <div class="modelbar hidden" id="gradeBar"></div>
 <div class="roadbar hidden" id="roadBar"></div>
@@ -613,10 +605,29 @@ function setScenario(id){
     if(SCEN)u.searchParams.set('scenario',SCEN); else u.searchParams.delete('scenario');
     history.replaceState(null,'',u);}catch(e){}
 }
+/* The cases sit in a bar of their own, above the GPU model, because which deal you are
+   looking at is a bigger choice than which card is in it. A deep link still works — it
+   just arrives with its button already lit instead of a badge in the header. */
 function renderScenario(){
-  const el=document.getElementById('scenbadge'); if(!el)return;
+  const bar=document.getElementById('scenbar'); if(!bar)return;
+  if(!isGpuProd()){bar.classList.add('hidden'); bar.innerHTML=''; return;}
+  bar.classList.remove('hidden');
+  const base=`<button class="modelbtn ${SCEN?'':'on'}" onclick="gotoScenario('')" title="The standing build plan">`
+    +`Base plan <span class="mp">full build-out &middot; ${DEF.years}-yr hold</span></button>`;
+  bar.innerHTML='<span class="mlabel">Case</span>'+base+SCENARIOS.map(sc=>{
+    const g=sc.road?sc.road.filter(r=>!r.r).reduce((t,r)=>t+r.g,0):0;
+    return `<button class="modelbtn ${SCEN===sc.id?'on':''}" onclick="gotoScenario('${sc.id}')" title="${sc.sub}">`
+      +`${sc.name} <span class="mp">${g.toLocaleString()} cards &middot; ${sc.ov.years}-yr hold</span></button>`;}).join('');
+}
+/* Switching case in place: drop whatever the old case owned, then rebuild from the
+   product preset, which runs applyGpuFacility and applyScenario in the right order. */
+function gotoScenario(id){
+  if((SCEN||'')===(id||'')) return;
+  setScenario(id);
   const sc=scenario();
-  el.innerHTML=sc?`<span class="scenpill" title="${sc.sub}">${sc.name}<a href="?gpu=${sc.gpu}" title="Back to the base case">&times;</a></span>`:'';
+  if(sc&&sc.gpu&&sc.gpu!==GPU){setModel(sc.gpu); renderScenario(); return;}
+  resetAll();
+  renderScenario();
 }
 let CUST='domestic'; // VAT customer type: 'domestic' (15%) | 'export' (0%, zero-rated services)
 const VAT_RATES={domestic:0.15, export:0};
