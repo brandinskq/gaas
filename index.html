@@ -470,6 +470,10 @@ const DEF={
   coloMW:2, coloRate:220, coloLeaseYears:10, coloEsc:0.025,
   rentalDecline:0.12, utilStart:1.0, utilSteady:1.0, utilRamp:6,
   utilWS:1.0, utilOD:0.90, // sold-through by channel: contract is take-or-pay, on-demand runs at 90%
+  // Channel rates live in state, not only on the hardware, so a case can carry its own
+  // price deck. applyGpuFacility seeds them from the selected model and applyScenario,
+  // which runs after it, is free to override them.
+  wsRate:5.175, odRate:16.00,
   powerKW:14, netPowerKW:1.4, pue:1.20, warrantyPerGpuYr:5530, warrantyInclYears:5, otherPct:0.055, omPerGpuYr:6083, residualPct:0.80, netResidualPct:0, tax:0.15, saudiPct:1.00, occupancy:0.90, rackKW:0,
   gaPct:0.05, gaFloor:2500000, omInflPct:0.05, gaInflPct:0.08, omPerMWYr:1500000, renewUplift:0.10,
   platPerGpu:4500, platShare:0.30, consoleStartup:6000000, consolePerGpu:350, // licensed share is derived from the channel mix; console bought in, not built
@@ -520,7 +524,7 @@ let S={...DEF, modes:DEF.modes.map(m=>({...m})), roadmap:DEF.roadmap.map(r=>({..
 // ws = wholesale/spot floor $/GPU-hr; od = on-demand retail $/GPU-hr (lowest of AWS/Azure/OCI).
 // Effective rental blends the two by the wholesale sales share (default 65% contract / 35% on-demand).
 const GPU_MODELS=[
-  {id:'b300',  name:'B300',        gpus:8,  power:14.0, cost:790000,  liquid:false, unit:'node', ws:4.50,  od:12.00, net:0.12, colo:350, ps:4687.5,
+  {id:'b300',  name:'B300',        gpus:8,  power:14.0, cost:790000,  liquid:false, unit:'node', ws:5.175, od:16.00, net:0.12, colo:350, ps:4687.5,
    road:[
     {k:'2026',m:12,g:1024},{k:'2027 H1',m:18,g:2048},{k:'2027 H2',m:24,g:2024},
     {k:'2028 H1',m:30,g:5144},{k:'2028 H2',m:36,g:10240},{k:'2029 H1',m:42,g:10240},
@@ -532,6 +536,9 @@ const GPU_MODELS=[
     {k:'2029 H2',m:48,g:30960}]},
 ];
 const blendRental=(m,s)=>s*m.ws+(1-s)*m.od; // s = wholesale share (0..1)
+/* Rates carry three decimals — $5.175 is a real quote — so two-decimal display was
+   truncating the very field a user edits. Trailing zeros are dropped: $12, not $12.000. */
+const rateStr=v=>String(+(+v).toFixed(3));
 // The model outlived the page: picking GB300 and refreshing dropped you back on
 // B300, which reads as the numbers changing rather than the selection resetting.
 // URL first so a link can open on a given model and be shared that way, then the
@@ -575,7 +582,9 @@ const SCENARIOS=[
    // 12 to month 72, which is the disposal month.
    // Network capex stays the model's 12% of the node price — the ratio is the planning
    // assumption, so a cheaper node carries a proportionally cheaper fabric.
-   ov:{serverPrice:500000, coloPerKWMo:200, years:6, lockYears:6},
+   // Priced on its own deck: this deal was negotiated at $4.50 / $12.00, and the base
+   // plan's later mark-up to $5.175 / $16.00 does not reach back into it.
+   ov:{serverPrice:500000, coloPerKWMo:200, years:6, lockYears:6, wsRate:4.50, odRate:12.00},
    // The cards are not committed to a year, so the tranche is labelled by month and
    // `undated` strips the calendar out of every caption derived from it. The month
    // still drives capex and revenue; it just no longer claims to be Dec 2026.
@@ -1205,7 +1214,7 @@ const TIER_CC={ws:'#4aa8d8', od:'#a5d600'}; // wholesale=sky, on-demand=lime
 function tierSplit(){ // GaaS: wholesale vs on-demand capacity/price/revenue shown separately
   const m=GPU_MODELS.find(x=>x.id===GPU); if(!m)return '';
   const s=S.wsShare;
-  const d=[{k:'ws',name:'Wholesale',cap:s*100,price:m.ws},{k:'od',name:'On-demand',cap:(1-s)*100,price:m.od}];
+  const d=[{k:'ws',name:'Wholesale',cap:s*100,price:S.wsRate},{k:'od',name:'On-demand',cap:(1-s)*100,price:S.odRate}];
   const revTot=d.reduce((a,x)=>a+x.cap/100*x.price,0)||1;
   d.forEach(x=>x.revPct=(x.cap/100*x.price)/revTot*100);
   const stack=key=>`<div style="display:flex;height:18px;border-radius:2px;overflow:hidden">`+
@@ -1597,7 +1606,7 @@ function render(){
   ${(o.useGpu&&!o.useTaas)?`<div class="card">
     <div class="h">Revenue by pricing tier — wholesale vs on-demand</div>
     ${tierSplit()}
-    <div class="foot">${(S.wsShare*100).toFixed(0)}% of GPU-hours sold wholesale @ $${(GPU_MODELS.find(x=>x.id===GPU)||{}).ws?.toFixed(2)}, ${((1-S.wsShare)*100).toFixed(0)}% on-demand @ $${(GPU_MODELS.find(x=>x.id===GPU)||{}).od?.toFixed(2)} — priced separately, then summed into revenue</div>
+    <div class="foot">${(S.wsShare*100).toFixed(0)}% of GPU-hours sold wholesale @ $${rateStr(S.wsRate)}, ${((1-S.wsShare)*100).toFixed(0)}% on-demand @ $${rateStr(S.odRate)} — priced separately, then summed into revenue</div>
   </div>`:''}
 
   <div class="duo">
@@ -1846,7 +1855,7 @@ function renderModelBar(){
   bar.classList.remove('hidden');
   bar.innerHTML='<span class="mlabel">GPU model</span>'+GPU_MODELS.map(m=>
     `<button class="modelbtn ${m.id===GPU?'on':''}" onclick="setModel('${m.id}')">
-      ${m.name} <span class="mp">${m.unit==='rack'?'rack':'8-GPU'} · $${(m.cost/1000).toFixed(0)}k · ${m.power}kW · $${blendRental(m,S.wsShare).toFixed(2)}/hr</span></button>`).join('');
+      ${m.name} <span class="mp">${m.unit==='rack'?'rack':'8-GPU'} · $${(m.cost/1000).toFixed(0)}k · ${m.power}kW · $${(m.id===GPU?(S.wsShare*S.wsRate+(1-S.wsShare)*S.odRate):blendRental(m,S.wsShare)).toFixed(2)}/hr</span></button>`).join('');
 }
 function setModel(id){
   const m=GPU_MODELS.find(x=>x.id===id); if(!m)return;
@@ -1878,6 +1887,7 @@ function applyGpuFacility(m){
   if(m.colo!=null)S.coloPerKWMo=m.colo;
   if(m.ps!=null)S.psPerGpu=m.ps;
   if(m.road)S.gpuRoadmap=m.road.map(r=>({...r}));
+  S.wsRate=m.ws; S.odRate=m.od;   // catalogue anchor; a case may override it below
   S.pue=1.20;             // the hall this fleet rents runs PUE 1.20 either way
   applyScenario();        // a named deal owns node price, hall rate and roadmap — it goes last
   applyChannelBlend();    // price and sold-through re-derive from the channel mix
@@ -2186,7 +2196,7 @@ function setMixShare(k,val){
 }
 function updateWsNote(m){
   const el=document.getElementById('wsNote'); m=m||GPU_MODELS.find(x=>x.id===GPU); if(!el||!m)return;
-  el.textContent=`WS $${m.ws.toFixed(2)} · OD $${m.od.toFixed(2)} → $${blendRental(m,S.wsShare).toFixed(2)}`;
+  el.textContent=`WS $${rateStr(S.wsRate)} · OD $${rateStr(S.odRate)} → $${(S.wsShare*S.wsRate+(1-S.wsShare)*S.odRate).toFixed(2)}`;
 }
 /* The fleet sells through two channels at two prices and two fill rates. Revenue per
    available GPU-hour is share x fill x price summed over both; the engine carries one
@@ -2195,8 +2205,8 @@ function updateWsNote(m){
 function applyChannelBlend(){
   const m=GPU_MODELS.find(x=>x.id===GPU); if(!m)return;
   const w=Math.max(0,Math.min(1,S.wsShare));
-  const price=blendRental(m,w);
-  const eff=w*(S.utilWS||0)*m.ws+(1-w)*(S.utilOD||0)*m.od;
+  const price=w*S.wsRate+(1-w)*S.odRate;
+  const eff=w*(S.utilWS||0)*S.wsRate+(1-w)*(S.utilOD||0)*S.odRate;
   S.rental=price;
   S.utilSteady=price>0?eff/price:0;
   S.utilStart=S.utilSteady;
@@ -2209,9 +2219,9 @@ function applyChannelBlend(){
 /* the fleet sells through two channels at two prices; the blend is what the engine takes */
 function gpuBlendNote(){
   const m=GPU_MODELS.find(x=>x.id===GPU); if(!m)return '';
-  const w=S.wsShare, eff=w*(S.utilWS||0)*m.ws+(1-w)*(S.utilOD||0)*m.od;
+  const w=S.wsShare, eff=w*(S.utilWS||0)*S.wsRate+(1-w)*(S.utilOD||0)*S.odRate;
   return `${Math.round(w*100)}% / ${Math.round((1-w)*100)}% \u2192 price `+
-    `<b class="num" style="color:var(--ink)">$${blendRental(m,w).toFixed(2)}</b>, sold-through `+
+    `<b class="num" style="color:var(--ink)">$${(w*S.wsRate+(1-w)*S.odRate).toFixed(2)}</b>, sold-through `+
     `<b class="num" style="color:var(--ink)">${(S.utilSteady*100).toFixed(1)}%</b> `+
     `\u2192 <b class="num" style="color:var(--ink)">$${eff.toFixed(2)}</b> / available GPU&#183;hr`;
 }
@@ -2223,10 +2233,10 @@ function renderGpuRates(){
   const row=(k,label,dot,price,fill)=>`<div class="chanrow">
     <div class="cname"><i class="ratedot" style="background:${dot}"></i>${label}</div>
     <div class="cfields">
-      <span class="cfield"><input type="number" id="grate_${k}" step="0.10" value="${price.toFixed(2)}"><span class="unit">$ / GPU&#183;hr</span></span>
+      <span class="cfield"><input type="number" id="grate_${k}" step="0.025" value="${rateStr(price)}"><span class="unit">$ / GPU&#183;hr</span></span>
       <span class="cfield"><input type="number" id="gfill_${k}" step="5" min="0" max="100" value="${Math.round(fill*100)}"><span class="unit">% sold</span></span>
     </div></div>`;
-  b.innerHTML=row('ws','Wholesale / contract','#a5d600',m.ws,S.utilWS)+row('od','On-demand','#1a7fa8',m.od,S.utilOD)+
+  b.innerHTML=row('ws','Wholesale / contract','#a5d600',S.wsRate,S.utilWS)+row('od','On-demand','#1a7fa8',S.odRate,S.utilOD)+
     `<div class="ratesum" id="grateSum">${gpuBlendNote()}</div>`;
   [['ws','utilWS'],['od','utilOD']].forEach(([k,key])=>{
     const pr=document.getElementById('grate_'+k); if(pr)pr.oninput=()=>setGpuRate(k,pr.value);
@@ -2237,7 +2247,7 @@ function renderGpuRates(){
 function setGpuRate(k,v){
   let x=parseFloat(v); if(isNaN(x)||x<0)x=0;
   const m=GPU_MODELS.find(y=>y.id===GPU); if(!m)return;
-  m[k]=x; applyChannelBlend();
+  S[k==='ws'?'wsRate':'odRate']=x; applyChannelBlend();
   refreshChannelNote(); updateWsNote(m); renderModelBar(); syncInputs(); render();
 }
 function setGpuFill(key,v){
