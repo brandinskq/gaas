@@ -354,9 +354,9 @@
         <input type="range" id="serverPrice_r" min="100000" max="1200000" step="10000">
       </div>
       <div class="drv">
-        <div class="row"><label>Number of GPUs<span class="hint" id="srvNote">8-GPU HGX B300 nodes</span><span class="ttip" id="gpuCountTip" data-tip="Total cards, set by the build roadmap and stepped in whole boxes. Drives capex, power and MW.">ⓘ</span></label>
-          <div class="val"><input type="number" id="gpuCount" step="1024"><span class="unit">GPUs</span></div></div>
-        <input type="range" id="gpuCount_r" min="1024" max="40960" step="1024">
+        <div class="row"><label>Number of GPUs<span class="hint" id="srvNote">8-GPU HGX B300 nodes</span><span class="ttip" id="gpuCountTip" data-tip="Total cards, 0 to 61,712, in whole boxes. Tranches fill in roadmap order; anything above the plan lands in the last one. Drives capex, power and MW.">ⓘ</span></label>
+          <div class="val"><input type="number" id="gpuCount" min="0" max="61712" step="8"><span class="unit">GPUs</span></div></div>
+        <input type="range" id="gpuCount_r" min="0" max="61712" step="8">
       </div>
       <div class="drv">
         <div class="row"><label>Network capex<span class="hint">IB/RoCE fabric · switches, optics, cabling</span><span class="ttip" data-tip="Scale-out fabric between boxes: switches, optics, cabling. GB300 racks already contain their NVLink and NICs, which is why theirs is far lower than B300&#39;s.">ⓘ</span></label>
@@ -585,7 +585,8 @@ const SCENARIOS=[
    // Priced on its own deck. Negotiated at $500k a node and $4.50 / $12.00, then both
    // raised 15% to $575k and $5.175 / $13.80. It still does not follow the base plan's
    // on-demand rate: the two decks only happen to meet on wholesale.
-   ov:{serverPrice:575000, coloPerKWMo:200, years:6, lockYears:6, wsRate:5.175, odRate:13.80},
+   // The bank lends this purchase at 7%, a point under the base plan's 8%.
+   ov:{serverPrice:575000, coloPerKWMo:200, years:6, lockYears:6, wsRate:5.175, odRate:13.80, debtRate:0.07},
    // The cards are not committed to a year, so the tranche is labelled by month and
    // `undated` strips the calendar out of every caption derived from it. The month
    // still drives capex and revenue; it just no longer claims to be Dec 2026.
@@ -1711,8 +1712,9 @@ function render(){
     const pn=document.getElementById('powerNote');
     if(pn)pn.textContent=m.name+' '+(m.unit==='rack'?'rack':'node');
     const gt=document.getElementById('gpuCountTip');
-    if(gt)gt.dataset.tip='Total GPU count, set by the build roadmap and stepped in whole '
-      +(m.unit==='rack'?'racks':'nodes')+' of '+m.gpus+' cards. Drives capex, power and MW.';
+    if(gt)gt.dataset.tip='Total GPU count, 0 to '+GPU_MAX.toLocaleString()+', in whole '
+      +(m.unit==='rack'?'racks':'nodes')+' of '+m.gpus+' cards. Tranches fill in roadmap order at their '
+      +'planned size; anything above the plan lands in the last one. Drives capex, power and MW.';
     const pt=document.getElementById('gpuPowerTip');
     if(pt)pt.dataset.tip='IT power draw per '+m.gpus+'-GPU '+(m.unit==='rack'?'rack':'node')
       +' (GPUs, CPU/memory and in-box NICs). '+m.name+' draws ~'+m.power+'kW. The external fabric is the separate '
@@ -1731,9 +1733,18 @@ function bindGpuCount(){
   const n=document.getElementById('gpuCount'),r=document.getElementById('gpuCount_r');
   const g=S.servers*S.gpus;
   n.value=g; r.value=g;
-  const apply=v=>{let gpu=Math.max(S.gpus,Math.round(v/S.gpus)*S.gpus);S.servers=gpu/S.gpus;render();};
-  n.oninput=()=>{let v=parseFloat(n.value);if(isNaN(v))v=S.gpus;apply(v);r.value=S.servers*S.gpus;};
-  r.oninput=()=>{apply(parseFloat(r.value));n.value=S.servers*S.gpus;};
+  const apply=v=>{
+    if(isGpuProd()&&(S.gpuRoadmap||[]).length){
+      S.gpuRoadmap=fillRoad(v); syncRoadmap(); renderRoadmap(); renderRoadChart();
+    } else {
+      const b=Math.max(1,S.gpus); S.servers=Math.round(Math.max(0,Math.min(GPU_MAX,v))/b);
+    }
+    render();
+  };
+  // the typed figure is left alone while typing and snapped to whole boxes on leaving
+  n.oninput=()=>{const v=parseFloat(n.value); if(isNaN(v))return; apply(v); r.value=S.servers*S.gpus;};
+  n.onchange=()=>{n.value=S.servers*S.gpus;};
+  r.oninput=()=>{apply(parseFloat(r.value)); n.value=S.servers*S.gpus;};
 }
 function bindColo(){
   const n=document.getElementById('coloPerKWMo'),r=document.getElementById('coloPerKWMo_r');
@@ -1891,7 +1902,11 @@ function applyGpuFacility(m){
   S.wsRate=m.ws; S.odRate=m.od;   // catalogue anchor; a case may override it below
   S.pue=1.20;             // the hall this fleet rents runs PUE 1.20 either way
   applyScenario();        // a named deal owns node price, hall rate and roadmap — it goes last
+  ROAD_TPL=null;          // the count fills against this roadmap, not the last one
   applyChannelBlend();    // price and sold-through re-derive from the channel mix
+  // The rate note under the channel mix was only written on a model switch, so a case
+  // with its own price deck showed the catalogue's $16 on-demand beside its own $13.80.
+  if(typeof updateWsNote==='function')updateWsNote(m);
   if(typeof syncRoadmap==='function')syncRoadmap();   // fleet = roadmap cards / cards per box
   if(typeof renderRoadmap==='function'){renderRoadmap();renderRoadChart();}
 }
@@ -2010,19 +2025,39 @@ function roadSpec(){
     ? {rows:S.gpuRoadmap||[], key:'g',  unit:'GPUs', step:'128', label:'GPUs'}
     : {rows:S.roadmap||[],    key:'mw', unit:'MW IT', step:'1',  label:'MW'};
 }
+/* The fleet size is an input again, from nothing up to 61,712 cards, which is the base
+   plan's full build-out. A count fills the tranches in roadmap order at their planned
+   size, so a smaller fleet is the same plan stopped early rather than every tranche
+   shrunk; a count above the plan lands in the last tranche. Refresh rows (r:1) copy the
+   growth tranche they replace. The template is the roadmap as the model or case laid
+   it out, plus whatever is typed into the tranche table, so dragging back up restores
+   the tranches a smaller count had emptied. */
+const GPU_MAX=61712;
+let ROAD_TPL=null;
+function roadTpl(){ if(!ROAD_TPL)ROAD_TPL=(S.gpuRoadmap||[]).map(r=>({...r})); return ROAD_TPL; }
+function fillRoad(total){
+  const tpl=roadTpl(), step=Math.max(1,S.gpus);
+  let left=Math.round(Math.max(0,Math.min(GPU_MAX,total||0))/step)*step;
+  if(left>GPU_MAX)left-=step;           // 61,712 is not a whole number of 72-card racks
+  const grow=tpl.filter(r=>!r.r).map(r=>{const t=Math.min(left,Math.max(0,r.g||0)); left-=t; return t;});
+  if(left>0&&grow.length)grow[grow.length-1]+=left;
+  let gi=0, ri=0;
+  return tpl.map(r=>({...r, g:r.r?(grow[ri++]||0):grow[gi++]}));
+}
 function roadTotal(){ const c=roadSpec(); return c.rows.filter(r=>!r.r).reduce((t,r)=>t+Math.max(0,r[c.key]||0),0); }
 function roadITMW(){ return (S.roadmap||[]).reduce((t,r)=>t+Math.max(0,r.mw||0),0); }
 function roadGrossMW(){ const u=Math.max(0.01,Math.min(1,S.usableIT||1)); return roadITMW()/u; }
 function syncRoadmap(){
   const gpuRoad=isGpuProd()&&(S.gpuRoadmap||[]).length;
-  if(gpuRoad){ S.servers=Math.max(1,Math.round(roadTotal()/Math.max(1,S.gpus))); }
+  if(gpuRoad){ S.servers=Math.max(0,Math.round(roadTotal()/Math.max(1,S.gpus))); }
   else if(!isGpuProd()){ S.coloMW=roadITMW(); } // the roadmap already schedules IT load
-  // fleet size is the roadmap's sum, so its own field stops being an input
-  [['gpuCount',1],['gpuCount_r',1]].forEach(([id])=>{
+  // The fleet is still the roadmap's sum, but the field writes back into the roadmap
+  // (fillRoad), so it stays an input. It steps in whole boxes of the selected model.
+  ['gpuCount','gpuCount_r'].forEach(id=>{
     const el=document.getElementById(id); if(!el)return;
-    el.disabled=!!gpuRoad;
-    el.title=gpuRoad?'Set by the build roadmap':'';
-    const drv=el.closest('.drv'); if(drv&&id==='gpuCount')drv.classList.toggle('derived-row',!!gpuRoad);
+    el.disabled=false; el.title='';
+    el.min=0; el.max=GPU_MAX; el.step=Math.max(1,S.gpus||1);
+    const drv=el.closest('.drv'); if(drv)drv.classList.remove('derived-row');
   });
 }
 function renderRoadmap(){
@@ -2175,12 +2210,14 @@ function roadFoot(){
 }
 function setRoadMW(i,v){
   let x=parseFloat(v); if(isNaN(x)||x<0)x=0;
+  if(isGpuProd()){const t=roadTpl(); if(t[i])t[i].g=x;}
   const c=roadSpec(); c.rows[i][c.key]=x; syncRoadmap();
   const f=document.getElementById('roadFoot'); if(f)f.textContent=roadFoot();
   renderRoadChart(); syncInputs(); render();
 }
 function setRoadMonth(i,v){
   let x=Math.round(parseFloat(v)); if(isNaN(x)||x<1)x=1;
+  if(isGpuProd()){const t=roadTpl(); if(t[i])t[i].m=x;}
   roadSpec().rows[i].m=x;
   const f=document.getElementById('roadFoot'); if(f)f.textContent=roadFoot();
   syncInputs(); renderRoadChart(); render();
