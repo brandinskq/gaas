@@ -572,7 +572,7 @@ const SCENARIOS=[
   // The id is the URL and stays put so shared links keep working; the label does not
   // name a year, because the cards are not committed to one.
   {id:'oneshot-2026', name:'One-shot 10k',
-   sub:'10,240 B300 bought in a single tranche · $500k a node · hall at $200/kW/mo',
+   sub:'10,240 B300 bought in a single tranche · $575k a node · hall at $200/kW/mo',
    gpu:'b300',
    // One purchase, one life, one disposal. The hold ends when the fleet is sold at five
    // years: an SPV holding nothing for four more years is an artefact, not a case.
@@ -582,9 +582,10 @@ const SCENARIOS=[
    // 12 to month 72, which is the disposal month.
    // Network capex stays the model's 12% of the node price — the ratio is the planning
    // assumption, so a cheaper node carries a proportionally cheaper fabric.
-   // Priced on its own deck: this deal was negotiated at $4.50 / $12.00, and the base
-   // plan's later mark-up to $5.175 / $16.00 does not reach back into it.
-   ov:{serverPrice:500000, coloPerKWMo:200, years:6, lockYears:6, wsRate:4.50, odRate:12.00},
+   // Priced on its own deck. Negotiated at $500k a node and $4.50 / $12.00, then both
+   // raised 15% to $575k and $5.175 / $13.80. It still does not follow the base plan's
+   // on-demand rate: the two decks only happen to meet on wholesale.
+   ov:{serverPrice:575000, coloPerKWMo:200, years:6, lockYears:6, wsRate:5.175, odRate:13.80},
    // The cards are not committed to a year, so the tranche is labelled by month and
    // `undated` strips the calendar out of every caption derived from it. The month
    // still drives capex and revenue; it just no longer claims to be Dec 2026.
@@ -1860,7 +1861,7 @@ function renderModelBar(){
 function setModel(id){
   const m=GPU_MODELS.find(x=>x.id===id); if(!m)return;
   // A scenario fixes a card count and a node price against one model. 10,240 cards is
-  // 1,280 B300 nodes but 142.2 GB300 racks, and $500k is not a rack price — so changing
+  // 1,280 B300 nodes but 142.2 GB300 racks, and $575k is not a rack price — so changing
   // model leaves the scenario rather than re-applying its numbers to the wrong hardware.
   const sc=scenario(); if(sc&&sc.gpu&&sc.gpu!==id)setScenario('');
   GPU=id;
