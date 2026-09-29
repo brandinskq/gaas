@@ -1240,6 +1240,21 @@ function dollarBar(o,price){
       <text x="${px.toFixed(1)}" y="${y+barH+20}" fill="#111318" font-size="10.5" font-family="ui-monospace,monospace" text-anchor="middle">price ${dol(price)}</text>`;
   return `<svg viewBox="0 0 ${W} ${H+6}" width="100%" height="${H+6}">${r}</svg>`;
 }
+/* The note under the cost table. It used to open with a colour key for "cyan" and
+   "amber" families the palette no longer has, and call the total a "stack" and the
+   profit share a "margin" when neither word appears in the table. It now names rows
+   the reader can see, and says which way the price moves before claiming it doesn't. */
+function costFoot(o){
+  let t=`Year 1 cost of ${o.useGpu?'one GPU-hour':'one kW of leased capacity for a month'}, before interest and tax.`;
+  if(!(o.costBasisEnd>o.costBasis+0.005))return t;
+  const om=(S.omInflPct*100).toFixed(0), ga=(S.gaInflPct*100).toFixed(0);
+  const up=[];
+  if(o.cb.oth>0&&S.omInflPct>0)up.push(['O&amp;M',om]);
+  if(o.cb.ga>0&&S.gaInflPct>0)up.push(['G&amp;A',ga]);
+  const rises=up.length===2?`O&amp;M rises ${om}% a year and G&amp;A ${ga}%`:`${up[0][0]} rises ${up[0][1]}% a year`;
+  const lead=lockCoversHold()?`The ${o.useGpu?'contract':'lease'} price stays fixed, but ${rises}`:`At a flat price, ${rises}`;
+  return t+` ${lead}, so by year ${o.lastRevY} total cost is <b>${dol(o.costBasisEnd)}</b> and operating profit is <b>${(o.marginPctEnd*100).toFixed(0)}%</b> of price, down from ${(o.marginPct*100).toFixed(0)}%.`;
+}
 function dollarTable(o){
   const price=o.unitPrice, pc=v=>price>0?(v/price*100):0;
   const sw=c=>`<i style="display:inline-block;width:9px;height:9px;background:${c};border-radius:2px;margin-right:6px;vertical-align:middle"></i>`;
@@ -1258,8 +1273,12 @@ function dollarTable(o){
     if(o.useGA)rows.push(['Corporate G&amp;A',o.cb.ga,CC.ga]);
   }
   const body=rows.filter(r=>r[1]>=0.005).map(([l,v,c])=>`<tr><td style="text-align:left">${sw(c)}${l}</td><td style="color:var(--ink)">${dol(v)}</td><td>${pc(v).toFixed(0)}%</td></tr>`).join('');
-  const m=o.margin, pf=`<tr style="border-top:1px solid var(--line2)"><td style="text-align:left">${sw(m>=0?CC.profit:CC.loss)}<b style="color:var(--ink)">${m>=0?'Profit':'Loss'}</b></td><td style="color:var(--ink)"><b>${dol(Math.abs(m))}</b></td><td><b style="color:var(--ink)">${pc(Math.abs(m)).toFixed(0)}%</b></td></tr>`;
-  return `<table class="modet" style="margin-top:10px"><thead><tr><th style="text-align:left">Component</th><th>$/${o.useGpu?'GPU-hr':'kW·mo'}</th><th>Share of price</th></tr></thead><tbody>${body}${pf}</tbody></table>`;
+  // The footnote compares year-one cost with a later year, so the year-one total has to
+  // be on the table for that comparison to point at something. The bottom line is
+  // price less every row above: before interest and tax, hence "operating".
+  const tot=`<tr style="border-top:1px solid var(--line2)"><td style="text-align:left;padding-left:15px">Total cost</td><td style="color:var(--ink)">${dol(o.costBasis)}</td><td>${pc(o.costBasis).toFixed(0)}%</td></tr>`;
+  const m=o.margin, pf=`<tr><td style="text-align:left">${sw(m>=0?CC.profit:CC.loss)}<b style="color:var(--ink)">${m>=0?'Operating profit':'Operating loss'}</b></td><td style="color:var(--ink)"><b>${dol(Math.abs(m))}</b></td><td><b style="color:var(--ink)">${pc(Math.abs(m)).toFixed(0)}%</b></td></tr>`;
+  return `<table class="modet" style="margin-top:10px"><thead><tr><th style="text-align:left">Component</th><th>$/${o.useGpu?'GPU-hr':'kW·mo'}</th><th>Share of price</th></tr></thead><tbody>${body}${tot}${pf}</tbody></table>`;
 }
 function capexBar(o){
   const W=640,H=46,pad=8,barH=18,y=8;
@@ -1583,7 +1602,7 @@ function render(){
     <div class="h">Where each ${o.useTaas?'token':o.useGpu?'rental':'lease'} dollar goes — per ${o.useGpu?'GPU-hour':'kW / month'}, year 1</div>
     ${dollarBar(o,o.unitPrice)}
     ${dollarTable(o)}
-    <div class="foot">${o.useGpu?'cyan family = compute layer (servers) · amber family = power &amp; facility layer':'every line is a facility cost — the lease price carries depreciation, development, ground rent, O&amp;M and overhead'}${o.costBasisEnd>o.costBasis+0.005?` · This is the <b>first full year</b>. Upkeep inflates at ${(S.omInflPct*100).toFixed(0)}%/yr and overhead at ${(S.gaInflPct*100).toFixed(0)}%/yr while a contracted price does not, so by year ${o.lastRevY} the stack is <b>${dol(o.costBasisEnd)}</b> and the margin is <b>${(o.marginPctEnd*100).toFixed(0)}%</b> against ${(o.marginPct*100).toFixed(0)}% here.`:''}</div>
+    <div class="foot">${costFoot(o)}</div>
   </div>
 
   <div class="card">
