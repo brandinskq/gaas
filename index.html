@@ -1134,7 +1134,10 @@ function compute(p,tog){
     // line in the table inherited the inflated share that left behind.
     const deprM=groad?lifeM:p.years*12;
     cb={depr:p.serverPrice*(1-p.residualPct)/deprM/ssBill,
-            net:(p.serverPrice*p.netPct*(1-p.netResidualPct)/deprM+p.transitMo/Math.max(1,target))/ssBill,
+            // switches, optics and cabling written down over the kit's life; bandwidth is a
+            // running cost, not a depreciation, so it gets a line of its own
+            net:(p.serverPrice*p.netPct*(1-p.netResidualPct)/deprM)/ssBill,
+            transit:((p.transitMo||0)/Math.max(1,target))/ssBill,
             facility:useFac?(facGpuPerServer/(p.facilityLife*12))/ssBill:0,
             dev:((useFac?psGpuPerServer/(p.facilityLife*12):0)
                 +gpus*(p.psPerGpu||0)/((p.gpuLifeYears||p.years)*12))/ssBill,
@@ -1150,7 +1153,7 @@ function compute(p,tog){
             // the stand-up fee is a one-off and does not belong in a steady-state hourly cost
             plat:useGpu?(gpus*(p.consolePerGpu||0)/12)/ssBill:0,
             ga:useGA?p.gaPct*baseRental:0};
-    costBasis=cb.depr+cb.net+cb.facility+cb.dev+cb.rent+cb.elec+cb.netpower+cb.warr+cb.oth+cb.lic+cb.plat+cb.ga;
+    costBasis=cb.depr+cb.net+cb.transit+cb.facility+cb.dev+cb.rent+cb.elec+cb.netpower+cb.warr+cb.oth+cb.lic+cb.plat+cb.ga;
     unitPrice=baseRental; unitStr='/GPU-hr'; rentMo=baseRental*H*p.utilSteady;
     // TaaS keeps $/GPU-hr unit economics — the common denominator across mixed token/image/second billing units
   } else {
@@ -1199,7 +1202,7 @@ const irrf=v=>v==null?'n/a':(v*100).toFixed(0)+'%';
 const yrf=v=>v==null?'—':v.toFixed(2)+' yr';
 
 /* ═══════════════ charts (SVG) ═══════════════ */
-const CC={depr:'#a5d600',net:'#7fae0a',warr:'#5f7d00',facility:'#4aa8d8',rent:'#3d7ea3',elec:'#2e5f7d',netpower:'#4a7d99',oth:'#7c8492',lic:'#76b900',plat:'#6b3fd4',ga:'#9061f9',dev:'#7fb8d4',profit:'#a5d600',loss:'#d92d3f'};
+const CC={depr:'#a5d600',net:'#7fae0a',transit:'#c49a3a',warr:'#5f7d00',facility:'#4aa8d8',rent:'#3d7ea3',elec:'#2e5f7d',netpower:'#4a7d99',oth:'#7c8492',lic:'#76b900',plat:'#6b3fd4',ga:'#9061f9',dev:'#7fb8d4',profit:'#a5d600',loss:'#d92d3f'};
 const MODE_CC={txt:'#a5d600',aud:'#4aa8d8',img:'#9061f9',vid:'#e07a1f'};
 function modalitySplit(){ // TaaS: capacity-mix vs revenue-share bars + legend
   const modes=S.modes||[]; const mixSum=modes.reduce((s,m)=>s+m.mix,0)||1;
@@ -1226,9 +1229,33 @@ function tierSplit(){ // GaaS: wholesale vs on-demand capacity/price/revenue sho
   return `${cap('Sales split — capacity')}${stack('cap')}${cap('Revenue share')}${stack('revPct')}
     <table class="modet" style="margin-top:12px"><thead><tr><th>Tier</th><th>Capacity</th><th>Rev</th><th>$/GPU-hr</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
+/* One list for the bar and the table, in the same order. The bar used to keep its own
+   and had lost Development fees and both licence lines, so it stopped short of the
+   price mark by exactly those rows. Capitalised items say how they are expensed:
+   depreciation for kit, amortisation for fees. */
+function costRows(o){
+  const r=[];
+  if(o.useGpu){
+    r.push(['depr','Server depreciation',o.cb.depr],['net','Network depreciation',o.cb.net],
+           ['transit','Internet transit',o.cb.transit||0],['warr','Warranty',o.cb.warr]);
+    if(o.useFac)r.push(['facility','Facility depreciation',o.cb.facility]);
+    // the fleet's deployment fee exists whether or not the hall is owned
+    r.push(['dev','Development fee amortisation',o.cb.dev]);
+    r.push(['rent',o.useFac?'Ground rent':'Colo fee',o.cb.rent],['elec','Electricity',o.cb.elec],
+           ['netpower','Network power',o.cb.netpower],['oth','GPU &amp; Fabric O&amp;M',o.cb.oth]);
+    if(o.cb.lic>0)r.push(['lic','NVIDIA AI Enterprise',o.cb.lic]);
+    if(o.cb.plat>0)r.push(['plat','NeoCloud license',o.cb.plat]);
+    if(o.useGA)r.push(['ga','Corporate G&amp;A',o.cb.ga]);
+  }else{
+    r.push(['depr','Facility depreciation',o.cb.depr],['dev','Development fee amortisation',o.cb.dev],
+           ['rent','Ground rent',o.cb.rent],['oth','IDC O&amp;M',o.cb.oth]);
+    if(o.useGA)r.push(['ga','Corporate G&amp;A',o.cb.ga]);
+  }
+  return r.map(([k,l,v])=>[k,l,v||0]);
+}
 function dollarBar(o,price){
   const W=640,H=70,pad=8,barH=30,y=16;
-  const segs=[['depr',o.cb.depr],['net',o.cb.net||0],['warr',o.cb.warr],['facility',o.cb.facility||0],['rent',o.cb.rent||0],['elec',o.cb.elec],['netpower',o.cb.netpower||0],['oth',o.cb.oth],['ga',o.cb.ga||0]];
+  const segs=costRows(o).map(([k,,v])=>[k,v]);
   const scaleMax=Math.max(price,o.costBasis)*1.03, sc=x=>(x/scaleMax)*(W-2*pad);
   let x=pad,r='';
   segs.forEach(([k,v])=>{const w=sc(v); if(w>0.3)r+=`<rect x="${x.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${barH}" fill="${CC[k]}"/>`; x+=w;});
@@ -1258,20 +1285,7 @@ function costFoot(o){
 function dollarTable(o){
   const price=o.unitPrice, pc=v=>price>0?(v/price*100):0;
   const sw=c=>`<i style="display:inline-block;width:9px;height:9px;background:${c};border-radius:2px;margin-right:6px;vertical-align:middle"></i>`;
-  const rows=[];
-  if(o.useGpu){
-    rows.push(['Server depreciation',o.cb.depr,CC.depr],['Network',o.cb.net,CC.net],['Warranty',o.cb.warr,CC.warr]);
-    if(o.useFac)rows.push(['Facility',o.cb.facility,CC.facility]);
-    // the fleet's deployment fee exists whether or not the hall is owned
-    rows.push(['Development fees',o.cb.dev,CC.dev]);
-    rows.push([o.useFac?'Ground rent':'Colo fee',o.cb.rent,CC.rent],['Electricity',o.cb.elec,CC.elec],['Network power',o.cb.netpower,CC.netpower],['GPU &amp; Fabric O&amp;M',o.cb.oth,CC.oth]);
-    if(o.cb.lic>0)rows.push(['NVIDIA AI Enterprise',o.cb.lic,CC.lic]);
-    if(o.cb.plat>0)rows.push(['NeoCloud license',o.cb.plat,CC.plat]);
-    if(o.useGA)rows.push(['Corporate G&amp;A',o.cb.ga,CC.ga]);
-  }else{
-    rows.push(['Facility depreciation',o.cb.depr,CC.depr],['Development fees',o.cb.dev,CC.dev],['Ground rent',o.cb.rent,CC.rent],['IDC O&amp;M',o.cb.oth,CC.oth]);
-    if(o.useGA)rows.push(['Corporate G&amp;A',o.cb.ga,CC.ga]);
-  }
+  const rows=costRows(o).map(([k,l,v])=>[l,v,CC[k]]);
   const body=rows.filter(r=>r[1]>=0.005).map(([l,v,c])=>`<tr><td style="text-align:left">${sw(c)}${l}</td><td style="color:var(--ink)">${dol(v)}</td><td>${pc(v).toFixed(0)}%</td></tr>`).join('');
   // The footnote compares year-one cost with a later year, so the year-one total has to
   // be on the table for that comparison to point at something. The bottom line is
