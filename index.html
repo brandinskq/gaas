@@ -572,7 +572,7 @@ const SCENARIOS=[
   // The id is the URL and stays put so shared links keep working; the label does not
   // name a year, because the cards are not committed to one.
   {id:'oneshot-2026', name:'One-shot 10k',
-   sub:'10,240 B300 bought in a single tranche · $575k a node · hall at $200/kW/mo',
+   sub:'10,240 B300 bought in a single tranche · $575k a node · hall at $250/kW/mo',
    gpu:'b300',
    // One purchase, one life, one disposal. The hold ends when the fleet is sold at five
    // years: an SPV holding nothing for four more years is an artefact, not a case.
@@ -588,7 +588,7 @@ const SCENARIOS=[
    // The bank lends this purchase at 7%, a point under the base plan's 8%.
    // years/lockYears are re-derived from the 5-year term (syncHorizon) and land on 6
    // again; they stay here because the case button reads its hold from them.
-   ov:{serverPrice:575000, coloPerKWMo:200, years:6, lockYears:6, wsRate:5.175, odRate:13.80, debtRate:0.07},
+   ov:{serverPrice:575000, coloPerKWMo:250, years:6, lockYears:6, wsRate:5.175, odRate:13.80, debtRate:0.07},
    // The cards are not committed to a year, so the tranche is labelled by month and
    // `undated` strips the calendar out of every caption derived from it. The month
    // still drives capex and revenue; it just no longer claims to be Dec 2026.
