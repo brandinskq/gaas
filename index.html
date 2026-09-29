@@ -369,7 +369,7 @@
         <input type="range" id="powerKW_r" min="8" max="160" step="0.5">
       </div>
       <div class="drv">
-        <div class="row"><label>Network Power<span class="hint">IB/Spectrum fabric · switches + optics</span><span class="ttip" data-tip="Power drawn by the leaf/spine fabric, per box.">ⓘ</span></label>
+        <div class="row"><label>Network Power<span class="hint">IB/Spectrum fabric · switches + optics</span><span class="ttip" data-tip="Electricity used by the leaf/spine switches and optics, counted per GPU box (about 10% of the box's own draw). Billed at the same tariff and PUE as the servers.">ⓘ</span></label>
           <div class="val"><input type="number" id="netPowerKW" step="0.1"><span class="unit">kW</span></div></div>
         <input type="range" id="netPowerKW_r" min="0" max="5" step="0.1">
       </div>
@@ -409,9 +409,9 @@
         <input type="range" id="coloPerKWMo_r" min="80" max="600" step="10">
       </div>
       <div class="drv">
-        <div class="row"><label>Contract term<span class="hint">horizon &amp; depreciation</span></label>
-          <div class="val"><input type="number" id="years" step="1"><span class="unit">years</span></div></div>
-        <input type="range" id="years_r" min="5" max="15" step="1">
+        <div class="row"><label>Contract term<span class="hint" id="termNote">each tranche · sets depreciation &amp; hold</span><span class="ttip" id="termTip" data-tip="Years each tranche is contracted, depreciated and held before it is sold at its residual. The hold is derived from it.">ⓘ</span></label>
+          <div class="val"><input type="number" id="years" min="1" max="15" step="1"><span class="unit">years</span></div></div>
+        <input type="range" id="years_r" min="1" max="10" step="1">
       </div>
     </div>
 
@@ -586,6 +586,8 @@ const SCENARIOS=[
    // raised 15% to $575k and $5.175 / $13.80. It still does not follow the base plan's
    // on-demand rate: the two decks only happen to meet on wholesale.
    // The bank lends this purchase at 7%, a point under the base plan's 8%.
+   // years/lockYears are re-derived from the 5-year term (syncHorizon) and land on 6
+   // again; they stay here because the case button reads its hold from them.
    ov:{serverPrice:575000, coloPerKWMo:200, years:6, lockYears:6, wsRate:5.175, odRate:13.80, debtRate:0.07},
    // The cards are not committed to a year, so the tranche is labelled by month and
    // `undated` strips the calendar out of every caption derived from it. The month
@@ -733,7 +735,6 @@ const F_REV=[
 const F_COST=[
   {section:'CAPEX &amp; residual value'},
   {k:'psPerGpu',gpuOnly:true,label:'Deployment / professional fees',unit:'$ / GPU',step:100,info:'One-time commissioning per card: cluster design, integration, fabric bring-up. Charged as each tranche lands, then depreciated. Replacements pay nothing.'},
-  {k:'gpuLifeYears',gpuOnly:true,label:'GPU holding period',unit:'yrs before sale',step:1,info:'Years a tranche runs before it is sold. Replacement tranches re-buy it the same month.'},
   {k:'residualPct',gpuOnly:true,label:'GPU / server resale value',unit:'% at exit',step:1,pct:true,info:'Resale price as % of what the card cost. 80% is a scarcity call, not a depreciation curve.'},
   {k:'netResidualPct',gpuOnly:true,label:'Network resale value',unit:'% at exit',step:1,pct:true,info:'Resale value of switches and optics. Zero here — written off rather than assumed to sell.'},
   {section:'OPEX — recurring'},
@@ -1241,8 +1242,8 @@ function costRows(o){
     if(o.useFac)r.push(['facility','Facility depreciation',o.cb.facility]);
     // the fleet's deployment fee exists whether or not the hall is owned
     r.push(['dev','Development fee amortisation',o.cb.dev]);
-    r.push(['rent',o.useFac?'Ground rent':'Colo fee',o.cb.rent],['elec','Electricity',o.cb.elec],
-           ['netpower','Network power',o.cb.netpower],['oth','GPU &amp; Fabric O&amp;M',o.cb.oth]);
+    r.push(['rent',o.useFac?'Ground rent':'Colo fee',o.cb.rent],['elec','Electricity (GPU servers)',o.cb.elec],
+           ['netpower','Electricity (network switches)',o.cb.netpower],['oth','GPU &amp; Fabric O&amp;M',o.cb.oth]);
     if(o.cb.lic>0)r.push(['lic','NVIDIA AI Enterprise',o.cb.lic]);
     if(o.cb.plat>0)r.push(['plat','NeoCloud license',o.cb.plat]);
     if(o.useGA)r.push(['ga','Corporate G&amp;A',o.cb.ga]);
@@ -1748,6 +1749,11 @@ function render(){
     if(gt)gt.dataset.tip='Total GPU count, 0 to '+GPU_MAX.toLocaleString()+', in whole '
       +(m.unit==='rack'?'racks':'nodes')+' of '+m.gpus+' cards. Tranches fill in roadmap order at their '
       +'planned size; anything above the plan lands in the last one. Drives capex, power and MW.';
+    const tn=document.getElementById('termNote'), tt=document.getElementById('termTip');
+    if(tn)tn.textContent=hasGpuRoad()?'each tranche · '+yrStr(S.years)+'-yr hold':'horizon & depreciation';
+    if(tt)tt.dataset.tip=hasGpuRoad()
+      ?'Years each tranche is contracted, depreciated and held before it is sold at its residual. The hold runs until the last tranche with cards finishes its term: '+yrStr(S.years)+' years here.'
+      :'Model horizon, and the depreciation period for the fleet.';
     const pt=document.getElementById('gpuPowerTip');
     if(pt)pt.dataset.tip='IT power draw per '+m.gpus+'-GPU '+(m.unit==='rack'?'rack':'node')
       +' (GPUs, CPU/memory and in-box NICs). '+m.name+' draws ~'+m.power+'kW. The external fabric is the separate '
@@ -1761,7 +1767,38 @@ function plRow(label,arr,bold){
 }
 
 /* ═══════════════ wiring ═══════════════ */
-const PRIM=[['serverPrice'],['netPct',0.01],['powerKW'],['netPowerKW'],['elec'],['years']];
+const PRIM=[['serverPrice'],['netPct',0.01],['powerKW'],['netPowerKW'],['elec']];
+/* "Contract term" used to be the model's hold, counted from month 1, labelled as if it
+   were the contract. Each tranche already ran, depreciated and sold on its own clock
+   (gpuLifeYears, five years), so the one-shot case read "6 years" for a five-year
+   deal: one year waiting for the cards, five running. The field is now the term itself.
+   The hold follows from it: it ends when the last tranche with cards in it finishes its
+   term, which is also when it is sold. A price lock that covered the old hold is
+   stretched or cut to cover the new one. Without a GPU roadmap there are no tranches,
+   and the field is the horizon, as before. */
+function hasGpuRoad(){ return isGpuProd()&&(S.gpuRoadmap||[]).length>0; }
+function termKey(){ return hasGpuRoad()?'gpuLifeYears':'years'; }
+function syncHorizon(){
+  if(!hasGpuRoad())return;
+  const all=S.gpuRoadmap, live=all.filter(r=>(r.g||0)>0), src=live.length?live:all;
+  const endM=Math.max(...src.map(r=>Math.max(1,Math.round(r.m||1))))+Math.round((S.gpuLifeYears||5)*12);
+  const covered=(S.lockYears||0)>=(S.years||0)-1e-9;
+  S.years=+(endM/12).toFixed(4);
+  if(covered)S.lockYears=S.years;
+}
+const yrStr=v=>String(+(+v).toFixed(2));
+function bindTerm(){
+  const n=document.getElementById('years'), r=document.getElementById('years_r');
+  n.value=yrStr(S[termKey()]); r.value=S[termKey()];
+  const apply=v=>{
+    if(isNaN(v))return;
+    S[termKey()]=Math.max(1,Math.min(15,v));
+    syncHorizon(); syncInputs(); render();
+  };
+  n.oninput=()=>{apply(parseFloat(n.value)); r.value=S[termKey()];};
+  n.onchange=()=>{n.value=yrStr(S[termKey()]);};
+  r.oninput=()=>{apply(parseFloat(r.value)); n.value=yrStr(S[termKey()]);};
+}
 function bindGpuCount(){
   const n=document.getElementById('gpuCount'),r=document.getElementById('gpuCount_r');
   const g=S.servers*S.gpus;
@@ -1880,10 +1917,10 @@ function lockCoversHold(){ return !!T.lock && (S.lockYears||0) >= (S.years||0); 
 function resetAll(){
   S={...DEF, modes:DEF.modes.map(m=>({...m})), roadmap:DEF.roadmap.map(r=>({...r})), gpuRoadmap:DEF.gpuRoadmap.map(r=>({...r}))};
   T={...TOG};
-  PRIM.forEach(bindPrimary);bindGpuCount();bindColo();bindWsShare();bindToggles();
+  PRIM.forEach(bindPrimary);bindGpuCount();bindTerm();bindColo();bindWsShare();bindToggles();
   setProduct(PROD);
 }
-function preset(name){if(name==='saudi'){S.elec=0.047;}PRIM.forEach(bindPrimary);bindGpuCount();bindColo();buildGroup('body_rev',F_REV);buildGroup('body_cost',F_COST);buildGroup('body_fin',F_FIN);render();}
+function preset(name){if(name==='saudi'){S.elec=0.047;}PRIM.forEach(bindPrimary);bindGpuCount();bindTerm();bindColo();buildGroup('body_rev',F_REV);buildGroup('body_cost',F_COST);buildGroup('body_fin',F_FIN);render();}
 
 /* ═══════════════ product & model selectors ═══════════════ */
 function renderProdBar(){
@@ -2082,7 +2119,7 @@ function roadITMW(){ return (S.roadmap||[]).reduce((t,r)=>t+Math.max(0,r.mw||0),
 function roadGrossMW(){ const u=Math.max(0.01,Math.min(1,S.usableIT||1)); return roadITMW()/u; }
 function syncRoadmap(){
   const gpuRoad=isGpuProd()&&(S.gpuRoadmap||[]).length;
-  if(gpuRoad){ S.servers=Math.max(0,Math.round(roadTotal()/Math.max(1,S.gpus))); }
+  if(gpuRoad){ S.servers=Math.max(0,Math.round(roadTotal()/Math.max(1,S.gpus))); syncHorizon(); }
   else if(!isGpuProd()){ S.coloMW=roadITMW(); } // the roadmap already schedules IT load
   // The fleet is still the roadmap's sum, but the field writes back into the roadmap
   // (fillRoad), so it stays an input. It steps in whole boxes of the selected model.
@@ -2251,7 +2288,7 @@ function setRoadMW(i,v){
 function setRoadMonth(i,v){
   let x=Math.round(parseFloat(v)); if(isNaN(x)||x<1)x=1;
   if(isGpuProd()){const t=roadTpl(); if(t[i])t[i].m=x;}
-  roadSpec().rows[i].m=x;
+  roadSpec().rows[i].m=x; syncHorizon();
   const f=document.getElementById('roadFoot'); if(f)f.textContent=roadFoot();
   syncInputs(); renderRoadChart(); render();
 }
@@ -2394,6 +2431,8 @@ function syncInputs(){
     if(n){n.value=+(S[k]/sc).toFixed(4);} if(r){r.value=S[k]/sc;}});
   const gc=document.getElementById('gpuCount'),gcr=document.getElementById('gpuCount_r');
   if(gc){gc.value=S.servers*S.gpus;} if(gcr){gcr.value=S.servers*S.gpus;}
+  const ty=document.getElementById('years'),tyr=document.getElementById('years_r');
+  if(ty&&document.activeElement!==ty)ty.value=yrStr(S[termKey()]); if(tyr)tyr.value=S[termKey()];
   const cp=document.getElementById('coloPerKWMo'),cpr=document.getElementById('coloPerKWMo_r');
   if(cp){cp.value=S.coloPerKWMo;} if(cpr){cpr.value=S.coloPerKWMo;}
   const rs=document.getElementById('rateSum'); if(rs)rs.innerHTML=leaseBlendNote();
@@ -2415,6 +2454,7 @@ bindWsShare();
 renderGpuRates();
 renderGradeBar();
 bindGpuCount();
+bindTerm();
 bindColo();
 bindToggles();
 setIdcMode(TOG.facility);
