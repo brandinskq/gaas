@@ -137,6 +137,14 @@
   .rowstack .modebtn{padding:7px 12px}
   .modebtn:first-child{border-right:1px solid var(--line2)}
   .modebtn.on{background:var(--compute-solid);color:#111318}
+  .hikerow{display:flex;align-items:center;gap:8px;margin-top:8px}
+  .hikebtn{background:var(--bg);color:var(--muted);border:1px solid var(--line2);border-radius:6px;padding:5px 10px;
+    font-family:var(--mono);font-size:11.5px;font-weight:600;cursor:pointer;transition:all .12s;white-space:nowrap}
+  .hikebtn.on{background:var(--compute-solid);color:#111318;border-color:var(--compute-solid)}
+  .hikepct{display:inline-flex;align-items:center;gap:4px}
+  .hikepct input{width:56px}
+  .hikenote{font-size:10.5px;color:var(--dim);margin-top:5px;font-family:var(--mono)}
+  .hikenote b{color:var(--ink);font-weight:600}
   .flabel{display:inline-flex;align-items:center;gap:5px}
   .ttip{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;
     font-size:9px;color:var(--muted);border:1px solid var(--line2);cursor:help;position:relative;flex:none;font-style:normal}
@@ -352,6 +360,10 @@
         <div class="row"><label>GPU capex<span class="hint">per 8-GPU server, bare-metal</span><span class="ttip" data-tip="Bare-metal price per box, hardware only. Networking is the next field, so do not double-count it if your quote includes both.">ⓘ</span></label>
           <div class="val"><input type="number" id="serverPrice" step="10000"><span class="unit">$ / server</span></div></div>
         <input type="range" id="serverPrice_r" min="100000" max="1200000" step="10000">
+        <div class="hikerow"><button id="hikeBtn" class="hikebtn" onclick="toggleHike()">&#9650; Price hike</button>
+          <span class="hikepct"><input type="number" id="hikePct" step="1" min="0" max="200"><span class="unit">%</span></span>
+          <span class="ttip" data-tip="What-if for a server price rise. On: the model prices each box AND the GPU rental rates up by this %, passing the cost through to customers. The capex and rate fields above keep today&#39;s price.">&#9432;</span></div>
+        <div class="hikenote" id="hikeNote"></div>
       </div>
       <div class="drv">
         <div class="row"><label>Number of GPUs<span class="hint" id="srvNote">8-GPU HGX B300 nodes</span><span class="ttip" id="gpuCountTip" data-tip="Total cards, 0 to 61,712, in whole boxes. Tranches fill in roadmap order; anything above the plan lands in the last one. Drives capex, power and MW.">ⓘ</span></label>
@@ -445,6 +457,10 @@
 /* ═══════════════ defaults & fields ═══════════════ */
 const DEF={
   serverPrice:790000, elec:0.047, rental:7.76, years:9, gpuLifeYears:5, netPct:0.12, transitMo:0,
+  // Server price hike: a what-if, not an edit. When on, the engine prices the boxes AND
+  // the sell rates up by the same %, so a pricier server is passed through to customers;
+  // the capex and rate inputs keep showing today's numbers.
+  hikeOn:false, hikePct:0.15,
   wsShare:0.70, // GPU sales mix: 70% wholesale/contract, 30% on-demand — blends the rental
 
   // The last tranche lands in month 48 and runs its five years to month 108, so the hold
@@ -793,6 +809,9 @@ function irr(cf){
   return m>=1-1e-4?null:m;
 }
 function compute(p,tog){
+  if(p.hikeOn&&p.hikePct){const k=1+p.hikePct;
+    p={...p, serverPrice:p.serverPrice*k, rental:p.rental*k,
+       modes:(p.modes||[]).map(m=>({...m,outPrice:m.outPrice*k,inPrice:(m.inPrice||0)*k}))};}
   const H=730, N=Math.round(p.years*12), gpus=p.gpus;
   const taxRate=(p.saudiPct!=null)?(p.saudiPct*0.025+(1-p.saudiPct)*0.20):p.tax; // Zakat 2.5% (Saudi/GCC) blended with 20% CIT (foreign)
   const useGpu0=tog._gpu!==false;
@@ -1561,6 +1580,7 @@ function setCustomer(mode){
 /* ═══════════════ render ═══════════════ */
 function render(){
   syncToggles();          // the erosion control appears and disappears with the lock period
+  syncHike(true);         // the effective-price note tracks every input it reads
   renderScenario();
   const o=compute(S,T);
   const vr=VAT_RATES[CUST]||0;
@@ -1568,9 +1588,9 @@ function render(){
 
   document.getElementById('tape').innerHTML= o.useTaas?
     (()=>{const b=taasBlended(S);const mixSum=S.modes.reduce((s,m)=>s+m.mix,0)||1;const mixStr=S.modes.map(m=>`${m.name} ${(m.mix/mixSum*100).toFixed(0)}%`).join(' · ');
-    return `<b class="num">${(S.servers*S.gpus).toLocaleString()}</b> GPUs @ <b class="num cy">${money(S.serverPrice)}</b>/node · power <b class="num am">$${S.elec.toFixed(3)}/kWh</b> · selling <b class="num">${mixStr}</b> · blended <b class="num">$${b.rental.toFixed(2)}/GPU-hr</b>${vr>0?` <span class="num am">(+${(vr*100).toFixed(0)}% VAT → $${(b.rental*(1+vr)).toFixed(2)} incl)</span>`:` <span class="num" style="color:var(--pass)">(0% VAT · export)</span>`}${T.decline?` · −${(S.rentalDecline*100).toFixed(0)}%/yr`:''} · <b class="num">${S.years}-yr</b> hold${T.debt?` · <b class="num">${(S.debtPct*100).toFixed(0)}%</b> debt`:' · all-equity'}`;})()
+    return `<b class="num">${(S.servers*S.gpus).toLocaleString()}</b> GPUs @ <b class="num cy">${money(S.serverPrice)}</b>/node${S.hikeOn?` <span class="num am">(+${(S.hikePct*100).toFixed(0)}% hike → ${money(S.serverPrice*(1+S.hikePct))}, rates +${(S.hikePct*100).toFixed(0)}%)</span>`:''} · power <b class="num am">$${S.elec.toFixed(3)}/kWh</b> · selling <b class="num">${mixStr}</b> · blended <b class="num">$${b.rental.toFixed(2)}/GPU-hr</b>${vr>0?` <span class="num am">(+${(vr*100).toFixed(0)}% VAT → $${(b.rental*(1+vr)).toFixed(2)} incl)</span>`:` <span class="num" style="color:var(--pass)">(0% VAT · export)</span>`}${T.decline?` · −${(S.rentalDecline*100).toFixed(0)}%/yr`:''} · <b class="num">${S.years}-yr</b> hold${T.debt?` · <b class="num">${(S.debtPct*100).toFixed(0)}%</b> debt`:' · all-equity'}`;})()
     : o.useGpu?
-    `<b class="num">${(S.servers*S.gpus).toLocaleString()}</b> GPUs @ <b class="num cy">${money(S.serverPrice)}</b>/node · power <b class="num am">$${S.elec.toFixed(3)}/kWh</b> · renting <b class="num">$${S.rental.toFixed(2)}/GPU-hr</b>${vr>0?` <span class="num am">(+${(vr*100).toFixed(0)}% VAT → $${(S.rental*(1+vr)).toFixed(2)} incl)</span>`:` <span class="num" style="color:var(--pass)">(0% VAT · export)</span>`}${(T.lock&&S.lockYears>0)?` <span style="color:var(--pass)">locked ${S.lockYears}yr${lockCoversHold()?', the full hold':''}</span>${(T.decline&&!lockCoversHold())?` then spot (−${(S.rentalDecline*100).toFixed(0)}%/yr)`:''}`:(T.decline?` <span>spot, eroding ${(S.rentalDecline*100).toFixed(0)}%/yr</span>`:'')} · <b class="num">${S.years}-yr</b> hold${(T.colo&&T.facility)?` · colo <b class="num am">${S.coloMW}MW @ $${S.coloRate}/kW</b>`:''}${T.debt?` · <b class="num">${(S.debtPct*100).toFixed(0)}%</b> debt`:' · all-equity'}`
+    `<b class="num">${(S.servers*S.gpus).toLocaleString()}</b> GPUs @ <b class="num cy">${money(S.serverPrice)}</b>/node${S.hikeOn?` <span class="num am">(+${(S.hikePct*100).toFixed(0)}% hike → ${money(S.serverPrice*(1+S.hikePct))}, rates +${(S.hikePct*100).toFixed(0)}%)</span>`:''} · power <b class="num am">$${S.elec.toFixed(3)}/kWh</b> · renting <b class="num">$${S.rental.toFixed(2)}/GPU-hr</b>${vr>0?` <span class="num am">(+${(vr*100).toFixed(0)}% VAT → $${(S.rental*(1+vr)).toFixed(2)} incl)</span>`:` <span class="num" style="color:var(--pass)">(0% VAT · export)</span>`}${(T.lock&&S.lockYears>0)?` <span style="color:var(--pass)">locked ${S.lockYears}yr${lockCoversHold()?', the full hold':''}</span>${(T.decline&&!lockCoversHold())?` then spot (−${(S.rentalDecline*100).toFixed(0)}%/yr)`:''}`:(T.decline?` <span>spot, eroding ${(S.rentalDecline*100).toFixed(0)}%/yr</span>`:'')} · <b class="num">${S.years}-yr</b> hold${(T.colo&&T.facility)?` · colo <b class="num am">${S.coloMW}MW @ $${S.coloRate}/kW</b>`:''}${T.debt?` · <b class="num">${(S.debtPct*100).toFixed(0)}%</b> debt`:' · all-equity'}`
     : `<b class="num">${+S.coloMW.toFixed(1)}</b> MW IT data hall${T.facility?` (${Math.round(roadGrossMW())} MW campus)`:''} · dev <b class="num cy">${money(S.facilityPerMW)}</b>/MW · lease <b class="num am">$${S.coloRate}/kW/mo</b>${(T.colo&&S.coloEsc>0)?` +${(S.coloEsc*100).toFixed(1)}%/yr`:''} · PUE <b class="num">${S.pue.toFixed(2)}</b>${S.rackKW>0?` · ~<b class="num">${S.rackKW}</b>kW/rack`:''} · <b class="num">${S.years}-yr</b> hold${T.debt?` · <b class="num">${(S.debtPct*100).toFixed(0)}%</b> debt`:' · all-equity'}`;
 
   document.getElementById('out').innerHTML=`
@@ -2427,7 +2447,20 @@ function setLeaseRate(k,v){
   buildGroup('body_rev',F_REV); render();
 }
 function bindLease(){ renderLeaseRates(); }
+/* server price hike: flips a multiplier the engine applies; S.serverPrice and the rates stay put */
+function toggleHike(){ S.hikeOn=!S.hikeOn; syncHike(); render(); }
+function setHikePct(v){ let x=parseFloat(v); if(isNaN(x)||x<0)x=0; S.hikePct=x/100; syncHike(true); render(); }
+function syncHike(keepField){
+  const b=document.getElementById('hikeBtn'), f=document.getElementById('hikePct'), n=document.getElementById('hikeNote');
+  if(b){b.classList.toggle('on',!!S.hikeOn); b.innerHTML=S.hikeOn?'&#9650; Price hike on':'&#9650; Price hike';}
+  if(f&&!keepField&&document.activeElement!==f)f.value=+(S.hikePct*100).toFixed(2);
+  if(!n)return;
+  if(!S.hikeOn){n.innerHTML='';return;}
+  const k=1+S.hikePct, w=S.wsShare;
+  n.innerHTML=`model uses <b>${money(S.serverPrice*k)}</b>/server · WS <b>$${rateStr(S.wsRate*k)}</b> · OD <b>$${rateStr(S.odRate*k)}</b> · blended <b>$${((w*S.wsRate+(1-w)*S.odRate)*k).toFixed(2)}</b>/GPU&#183;hr`;
+}
 function syncInputs(){
+  syncHike();
   PRIM.forEach(([k,scale])=>{const sc=scale||1;const n=document.getElementById(k),r=document.getElementById(k+'_r');
     if(n){n.value=+(S[k]/sc).toFixed(4);} if(r){r.value=S[k]/sc;}});
   const gc=document.getElementById('gpuCount'),gcr=document.getElementById('gpuCount_r');
@@ -2458,6 +2491,8 @@ bindGpuCount();
 bindTerm();
 bindColo();
 bindToggles();
+(()=>{const f=document.getElementById('hikePct'); if(f)f.oninput=()=>setHikePct(f.value);})();
+syncHike();
 setIdcMode(TOG.facility);
 setCustomer(CUST);
 buildGroup('body_rev',F_REV);
