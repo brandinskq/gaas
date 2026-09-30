@@ -457,10 +457,10 @@
 /* ═══════════════ defaults & fields ═══════════════ */
 const DEF={
   serverPrice:790000, elec:0.047, rental:7.76, years:9, gpuLifeYears:5, netPct:0.12, transitMo:0,
-  // Server price hike: a what-if, not an edit. When on, the engine prices the boxes AND
-  // the sell rates up by the same %, so a pricier server is passed through to customers;
-  // the capex and rate inputs keep showing today's numbers.
-  hikeOn:false, hikePct:0.15,
+  // Server price hike: pressing it rewrites GPU capex AND both rental rates by the same
+  // ratio, so a pricier server is passed straight through to customers. hikeK is the
+  // factor actually applied, so pressing again divides it back out exactly.
+  hikeOn:false, hikePct:0.15, hikeK:1,
   wsShare:0.70, // GPU sales mix: 70% wholesale/contract, 30% on-demand — blends the rental
 
   // The last tranche lands in month 48 and runs its five years to month 108, so the hold
@@ -809,9 +809,6 @@ function irr(cf){
   return m>=1-1e-4?null:m;
 }
 function compute(p,tog){
-  if(p.hikeOn&&p.hikePct){const k=1+p.hikePct;
-    p={...p, serverPrice:p.serverPrice*k, rental:p.rental*k,
-       modes:(p.modes||[]).map(m=>({...m,outPrice:m.outPrice*k,inPrice:(m.inPrice||0)*k}))};}
   const H=730, N=Math.round(p.years*12), gpus=p.gpus;
   const taxRate=(p.saudiPct!=null)?(p.saudiPct*0.025+(1-p.saudiPct)*0.20):p.tax; // Zakat 2.5% (Saudi/GCC) blended with 20% CIT (foreign)
   const useGpu0=tog._gpu!==false;
@@ -1588,9 +1585,9 @@ function render(){
 
   document.getElementById('tape').innerHTML= o.useTaas?
     (()=>{const b=taasBlended(S);const mixSum=S.modes.reduce((s,m)=>s+m.mix,0)||1;const mixStr=S.modes.map(m=>`${m.name} ${(m.mix/mixSum*100).toFixed(0)}%`).join(' · ');
-    return `<b class="num">${(S.servers*S.gpus).toLocaleString()}</b> GPUs @ <b class="num cy">${money(S.serverPrice)}</b>/node${S.hikeOn?` <span class="num am">(+${(S.hikePct*100).toFixed(0)}% hike → ${money(S.serverPrice*(1+S.hikePct))}, rates +${(S.hikePct*100).toFixed(0)}%)</span>`:''} · power <b class="num am">$${S.elec.toFixed(3)}/kWh</b> · selling <b class="num">${mixStr}</b> · blended <b class="num">$${b.rental.toFixed(2)}/GPU-hr</b>${vr>0?` <span class="num am">(+${(vr*100).toFixed(0)}% VAT → $${(b.rental*(1+vr)).toFixed(2)} incl)</span>`:` <span class="num" style="color:var(--pass)">(0% VAT · export)</span>`}${T.decline?` · −${(S.rentalDecline*100).toFixed(0)}%/yr`:''} · <b class="num">${S.years}-yr</b> hold${T.debt?` · <b class="num">${(S.debtPct*100).toFixed(0)}%</b> debt`:' · all-equity'}`;})()
+    return `<b class="num">${(S.servers*S.gpus).toLocaleString()}</b> GPUs @ <b class="num cy">${money(S.serverPrice)}</b>/node${S.hikeOn?` <span class="num am">(incl. +${((S.hikeK-1)*100).toFixed(0)}% hike, rates +${((S.hikeK-1)*100).toFixed(0)}%)</span>`:''} · power <b class="num am">$${S.elec.toFixed(3)}/kWh</b> · selling <b class="num">${mixStr}</b> · blended <b class="num">$${b.rental.toFixed(2)}/GPU-hr</b>${vr>0?` <span class="num am">(+${(vr*100).toFixed(0)}% VAT → $${(b.rental*(1+vr)).toFixed(2)} incl)</span>`:` <span class="num" style="color:var(--pass)">(0% VAT · export)</span>`}${T.decline?` · −${(S.rentalDecline*100).toFixed(0)}%/yr`:''} · <b class="num">${S.years}-yr</b> hold${T.debt?` · <b class="num">${(S.debtPct*100).toFixed(0)}%</b> debt`:' · all-equity'}`;})()
     : o.useGpu?
-    `<b class="num">${(S.servers*S.gpus).toLocaleString()}</b> GPUs @ <b class="num cy">${money(S.serverPrice)}</b>/node${S.hikeOn?` <span class="num am">(+${(S.hikePct*100).toFixed(0)}% hike → ${money(S.serverPrice*(1+S.hikePct))}, rates +${(S.hikePct*100).toFixed(0)}%)</span>`:''} · power <b class="num am">$${S.elec.toFixed(3)}/kWh</b> · renting <b class="num">$${S.rental.toFixed(2)}/GPU-hr</b>${vr>0?` <span class="num am">(+${(vr*100).toFixed(0)}% VAT → $${(S.rental*(1+vr)).toFixed(2)} incl)</span>`:` <span class="num" style="color:var(--pass)">(0% VAT · export)</span>`}${(T.lock&&S.lockYears>0)?` <span style="color:var(--pass)">locked ${S.lockYears}yr${lockCoversHold()?', the full hold':''}</span>${(T.decline&&!lockCoversHold())?` then spot (−${(S.rentalDecline*100).toFixed(0)}%/yr)`:''}`:(T.decline?` <span>spot, eroding ${(S.rentalDecline*100).toFixed(0)}%/yr</span>`:'')} · <b class="num">${S.years}-yr</b> hold${(T.colo&&T.facility)?` · colo <b class="num am">${S.coloMW}MW @ $${S.coloRate}/kW</b>`:''}${T.debt?` · <b class="num">${(S.debtPct*100).toFixed(0)}%</b> debt`:' · all-equity'}`
+    `<b class="num">${(S.servers*S.gpus).toLocaleString()}</b> GPUs @ <b class="num cy">${money(S.serverPrice)}</b>/node${S.hikeOn?` <span class="num am">(incl. +${((S.hikeK-1)*100).toFixed(0)}% hike, rates +${((S.hikeK-1)*100).toFixed(0)}%)</span>`:''} · power <b class="num am">$${S.elec.toFixed(3)}/kWh</b> · renting <b class="num">$${S.rental.toFixed(2)}/GPU-hr</b>${vr>0?` <span class="num am">(+${(vr*100).toFixed(0)}% VAT → $${(S.rental*(1+vr)).toFixed(2)} incl)</span>`:` <span class="num" style="color:var(--pass)">(0% VAT · export)</span>`}${(T.lock&&S.lockYears>0)?` <span style="color:var(--pass)">locked ${S.lockYears}yr${lockCoversHold()?', the full hold':''}</span>${(T.decline&&!lockCoversHold())?` then spot (−${(S.rentalDecline*100).toFixed(0)}%/yr)`:''}`:(T.decline?` <span>spot, eroding ${(S.rentalDecline*100).toFixed(0)}%/yr</span>`:'')} · <b class="num">${S.years}-yr</b> hold${(T.colo&&T.facility)?` · colo <b class="num am">${S.coloMW}MW @ $${S.coloRate}/kW</b>`:''}${T.debt?` · <b class="num">${(S.debtPct*100).toFixed(0)}%</b> debt`:' · all-equity'}`
     : `<b class="num">${+S.coloMW.toFixed(1)}</b> MW IT data hall${T.facility?` (${Math.round(roadGrossMW())} MW campus)`:''} · dev <b class="num cy">${money(S.facilityPerMW)}</b>/MW · lease <b class="num am">$${S.coloRate}/kW/mo</b>${(T.colo&&S.coloEsc>0)?` +${(S.coloEsc*100).toFixed(1)}%/yr`:''} · PUE <b class="num">${S.pue.toFixed(2)}</b>${S.rackKW>0?` · ~<b class="num">${S.rackKW}</b>kW/rack`:''} · <b class="num">${S.years}-yr</b> hold${T.debt?` · <b class="num">${(S.debtPct*100).toFixed(0)}%</b> debt`:' · all-equity'}`;
 
   document.getElementById('out').innerHTML=`
@@ -1985,7 +1982,7 @@ function applyGpuFacility(m){
   // showing. A roadmap in cards also has to divide into whole boxes — 1,024 cards is 128
   // B300 nodes but 14.2 GB300 racks — so each model carries its own schedule, the GB300
   // one stepping in multiples of 72 from 1,080 along the same curve to the same fleet.
-  S.gpus=m.gpus; S.powerKW=m.power; S.netPowerKW=+(m.power*0.10).toFixed(2); S.serverPrice=m.cost;
+  S.gpus=m.gpus; S.powerKW=m.power; S.netPowerKW=+(m.power*0.10).toFixed(2); S.serverPrice=m.cost; S.hikeOn=false; S.hikeK=1; // fresh catalogue price, nothing hiked yet
   if(m.net!=null)S.netPct=m.net;
   if(m.colo!=null)S.coloPerKWMo=m.colo;
   if(m.ps!=null)S.psPerGpu=m.ps;
@@ -2447,17 +2444,30 @@ function setLeaseRate(k,v){
   buildGroup('body_rev',F_REV); render();
 }
 function bindLease(){ renderLeaseRates(); }
-/* server price hike: flips a multiplier the engine applies; S.serverPrice and the rates stay put */
-function toggleHike(){ S.hikeOn=!S.hikeOn; syncHike(); render(); }
-function setHikePct(v){ let x=parseFloat(v); if(isNaN(x)||x<0)x=0; S.hikePct=x/100; syncHike(true); render(); }
+/* server price hike: scales GPU capex and both channel rates by one factor, in place.
+   Off→on multiplies by (1+%); on→off divides the same factor back out, so any edit made
+   in between survives. Changing the % while on re-scales by new/old. */
+function scaleHike(r){
+  S.serverPrice*=r; S.wsRate*=r; S.odRate*=r;
+  S.serverPrice=Math.round(S.serverPrice); S.wsRate=+S.wsRate.toFixed(4); S.odRate=+S.odRate.toFixed(4);
+  applyChannelBlend(); renderGpuRates(); refreshChannelNote(); updateWsNote(); renderModelBar(); syncInputs(); render();
+}
+function toggleHike(){
+  if(S.hikeOn){const r=1/S.hikeK; S.hikeOn=false; S.hikeK=1; scaleHike(r);}
+  else{const k=1+S.hikePct; S.hikeOn=true; S.hikeK=k; scaleHike(k);}
+}
+function setHikePct(v){
+  let x=parseFloat(v); if(isNaN(x)||x<0)x=0; S.hikePct=x/100;
+  if(S.hikeOn){const k=1+S.hikePct, r=k/S.hikeK; S.hikeK=k; scaleHike(r);} else syncHike(true);
+}
 function syncHike(keepField){
   const b=document.getElementById('hikeBtn'), f=document.getElementById('hikePct'), n=document.getElementById('hikeNote');
   if(b){b.classList.toggle('on',!!S.hikeOn); b.innerHTML=S.hikeOn?'&#9650; Price hike on':'&#9650; Price hike';}
   if(f&&!keepField&&document.activeElement!==f)f.value=+(S.hikePct*100).toFixed(2);
   if(!n)return;
   if(!S.hikeOn){n.innerHTML='';return;}
-  const k=1+S.hikePct, w=S.wsShare;
-  n.innerHTML=`model uses <b>${money(S.serverPrice*k)}</b>/server · WS <b>$${rateStr(S.wsRate*k)}</b> · OD <b>$${rateStr(S.odRate*k)}</b> · blended <b>$${((w*S.wsRate+(1-w)*S.odRate)*k).toFixed(2)}</b>/GPU&#183;hr`;
+  const k=S.hikeK;
+  n.innerHTML=`capex &amp; rental both +${((k-1)*100).toFixed(1).replace(/\.0$/,'')}% · was <b>${money(S.serverPrice/k)}</b>/server · WS <b>$${rateStr(S.wsRate/k)}</b> · OD <b>$${rateStr(S.odRate/k)}</b>`;
 }
 function syncInputs(){
   syncHike();
